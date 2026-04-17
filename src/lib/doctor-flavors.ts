@@ -25,14 +25,13 @@ import { serverSchema } from "./env";
 import { FLAVOR_NAMES, loadFlavor, type FlavorName } from "./env-flavors";
 import {
   type CheckResult,
+  PASS,
+  FAIL,
+  SKIP,
   probeMcpServer,
   probeAnthropicKey,
   probeGeminiKey,
 } from "./doctor-checks";
-
-const PASS = "\x1b[32m✓\x1b[0m";
-const FAIL = "\x1b[31m✗\x1b[0m";
-const SKIP = "\x1b[90m○\x1b[0m";
 
 const isLive = process.argv.includes("--live");
 

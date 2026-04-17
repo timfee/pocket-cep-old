@@ -76,10 +76,11 @@ function ProtocolEventCard({ event, index }: { event: AgentEvent; index: number 
   const isRequest = event.type === "mcp_request";
   const payload = "payload" in event ? event.payload : {};
 
-  const toolName =
-    isRequest && typeof payload === "object" && payload !== null
-      ? (((payload as Record<string, unknown>).params as Record<string, unknown>)?.name ?? "?")
-      : "response";
+  const params =
+    isRequest && typeof payload.params === "object" && payload.params !== null
+      ? (payload.params as Record<string, unknown>)
+      : null;
+  const toolName = isRequest ? String(params?.name ?? "?") : "response";
 
   return (
     <div className="rounded-[var(--radius-xs)] border border-zinc-700/50 bg-zinc-800">

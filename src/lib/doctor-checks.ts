@@ -11,6 +11,11 @@ import { getErrorMessage } from "./errors";
  */
 export type CheckResult = { ok: boolean; message: string };
 
+export const PASS = "\x1b[32m✓\x1b[0m";
+export const FAIL = "\x1b[31m✗\x1b[0m";
+export const WARN = "\x1b[33m!\x1b[0m";
+export const SKIP = "\x1b[90m○\x1b[0m";
+
 /**
  * Model used for the Anthropic API key probe. We use the cheapest model
  * to avoid burning tokens on a health check.

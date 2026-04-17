@@ -24,8 +24,6 @@ export function createClaudeAdapter(apiKey: string, model?: string): LlmAdapter 
 
   return {
     async *runTurn({ systemPrompt, messages, tools, toolResults }) {
-      // Build the Anthropic messages array. We need to convert our generic
-      // ChatMessage format into Anthropic's specific content block format.
       const anthropicMessages = buildAnthropicMessages(messages, toolResults);
 
       // Convert our generic tool definitions into Anthropic's format.
@@ -52,7 +50,6 @@ export function createClaudeAdapter(apiKey: string, model?: string): LlmAdapter 
         tools: anthropicTools.length > 0 ? anthropicTools : undefined,
       });
 
-      // Track tool calls as they come in so we can yield them as complete events.
       const pendingToolCalls = new Map<number, { id: string; name: string; inputJson: string }>();
 
       for await (const event of stream) {

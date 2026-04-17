@@ -62,28 +62,24 @@ export async function GET() {
     return NextResponse.json({ error: hint }, { status: 502 });
   }
 
-  // Extract emails from profiles (the primary source — all managed users).
   const profileEmails = new Map<string, { lastActive?: string }>();
   if (profilesResult.status === "fulfilled") {
     extractProfileEmails(profilesResult.value.content, profileEmails);
   }
 
-  // Extract event counts from activity log (annotates profiles with activity).
   const activityCounts = new Map<string, number>();
   if (activityResult.status === "fulfilled") {
     extractActivityCounts(activityResult.value.content, activityCounts);
   }
 
-  // Merge: start with all profile users, annotate with activity counts.
   const allEmails = new Set([...profileEmails.keys(), ...activityCounts.keys()]);
   const users: UserEntry[] = Array.from(allEmails).map((email) => ({
     email,
     eventCount: activityCounts.get(email) ?? 0,
     lastActive: profileEmails.get(email)?.lastActive,
-    source: profileEmails.has(email) ? ("profile" as const) : ("activity" as const),
+    source: profileEmails.has(email) ? "profile" : "activity",
   }));
 
-  // Sort: users with activity first (by count desc), then alphabetically.
   users.sort((a, b) => {
     if (a.eventCount !== b.eventCount) return b.eventCount - a.eventCount;
     return a.email.localeCompare(b.email);

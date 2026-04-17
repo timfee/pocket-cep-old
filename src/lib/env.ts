@@ -1,99 +1,95 @@
 /**
  * @file Zod-validated environment variables for Pocket CEP.
  *
- * Every env var the app uses is declared here with a Zod schema. Importing
- * this module validates the environment at startup — if anything is missing
- * or malformed, the app crashes immediately with a clear error message
- * instead of failing later at runtime in a confusing way.
- *
- * Extension point: to add a new env var, add it to the appropriate schema
- * (serverSchema or clientSchema), then access it via `env.YOUR_VAR`.
+ * Uses discriminated unions to enforce that each auth mode and LLM
+ * provider has its required credentials. Invalid combinations are
+ * caught at startup with clear error messages.
  */
 
 import { z } from "zod";
 
-/**
- * The two auth modes that control how Pocket CEP authenticates with the
- * MCP server. See .env for detailed descriptions of each mode.
- */
-const authModeSchema = z.enum(["service_account", "user_oauth"]);
+const googleClientId = z
+  .string()
+  .min(1, "GOOGLE_CLIENT_ID is required in user_oauth mode.")
+  .regex(
+    /^\d+-\w+\.apps\.googleusercontent\.com$/,
+    "GOOGLE_CLIENT_ID must match {numbers}-{hash}.apps.googleusercontent.com",
+  );
+
+const googleClientSecret = z
+  .string()
+  .min(1, "GOOGLE_CLIENT_SECRET is required in user_oauth mode.");
+
+const baseFields = {
+  BETTER_AUTH_SECRET: z
+    .string()
+    .min(1, "BETTER_AUTH_SECRET is required. Run: openssl rand -base64 32"),
+  BETTER_AUTH_URL: z.string().url().default("http://localhost:3000"),
+  MCP_SERVER_URL: z.string().url().default("http://localhost:4000/mcp"),
+  LLM_MODEL: z.string().default(""),
+};
+
+const serviceAccountAuth = z.object({
+  ...baseFields,
+  AUTH_MODE: z.literal("service_account"),
+  GOOGLE_CLIENT_ID: z.string().default(""),
+  GOOGLE_CLIENT_SECRET: z.string().default(""),
+});
+
+const userOAuthAuth = z.object({
+  ...baseFields,
+  AUTH_MODE: z.literal("user_oauth"),
+  GOOGLE_CLIENT_ID: googleClientId,
+  GOOGLE_CLIENT_SECRET: googleClientSecret,
+});
+
+const authSchema = z.discriminatedUnion("AUTH_MODE", [serviceAccountAuth, userOAuthAuth]);
+
+const claudeProvider = z.object({
+  LLM_PROVIDER: z.literal("claude"),
+  ANTHROPIC_API_KEY: z
+    .string()
+    .min(
+      1,
+      'ANTHROPIC_API_KEY is required when LLM_PROVIDER is "claude". Get one at https://console.anthropic.com/',
+    ),
+  GOOGLE_AI_API_KEY: z.string().default(""),
+});
+
+const geminiProvider = z.object({
+  LLM_PROVIDER: z.literal("gemini"),
+  ANTHROPIC_API_KEY: z.string().default(""),
+  GOOGLE_AI_API_KEY: z
+    .string()
+    .min(
+      1,
+      'GOOGLE_AI_API_KEY is required when LLM_PROVIDER is "gemini". Get one at https://aistudio.google.com/apikey',
+    ),
+});
+
+const llmSchema = z.discriminatedUnion("LLM_PROVIDER", [claudeProvider, geminiProvider]);
 
 /**
- * The supported LLM providers for the chat agent.
+ * Full server schema. Applies defaults for AUTH_MODE and LLM_PROVIDER before
+ * parsing so the discriminated unions can match on the discriminant field.
  */
-const llmProviderSchema = z.enum(["claude", "gemini"]);
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
 
-/**
- * Schema for server-side environment variables. These are only available
- * in API routes and Server Components — never shipped to the browser.
- *
- * We use .default() for optional vars and .refine() for conditional
- * requirements (e.g. ANTHROPIC_API_KEY is only required when LLM_PROVIDER
- * is "claude").
- */
-export const serverSchema = z
-  .object({
-    // Auth
-    AUTH_MODE: authModeSchema.default("service_account"),
-    BETTER_AUTH_SECRET: z
-      .string()
-      .min(1, "BETTER_AUTH_SECRET is required. Run: openssl rand -base64 32"),
-    BETTER_AUTH_URL: z.string().url().default("http://localhost:3000"),
+export const serverSchema = z.preprocess((raw) => {
+  if (!isRecord(raw)) return raw;
+  return {
+    ...raw,
+    AUTH_MODE: raw.AUTH_MODE || "service_account",
+    LLM_PROVIDER: raw.LLM_PROVIDER || "claude",
+  };
+}, authSchema.and(llmSchema));
 
-    // Google OAuth
-    GOOGLE_CLIENT_ID: z.string().min(1, "GOOGLE_CLIENT_ID is required. See .env.local.example."),
-    GOOGLE_CLIENT_SECRET: z
-      .string()
-      .min(1, "GOOGLE_CLIENT_SECRET is required. See .env.local.example."),
-
-    // MCP Server
-    MCP_SERVER_URL: z.string().url().default("http://localhost:4000/mcp"),
-
-    // LLM
-    LLM_PROVIDER: llmProviderSchema.default("claude"),
-    LLM_MODEL: z.string().optional().default(""),
-    ANTHROPIC_API_KEY: z.string().optional().default(""),
-    GOOGLE_AI_API_KEY: z.string().optional().default(""),
-  })
-  .superRefine((data, ctx) => {
-    // Ensure the correct API key is set for the chosen LLM provider.
-    if (data.LLM_PROVIDER === "claude" && !data.ANTHROPIC_API_KEY) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["ANTHROPIC_API_KEY"],
-        message:
-          'ANTHROPIC_API_KEY is required when LLM_PROVIDER is "claude". ' +
-          "Get one at https://console.anthropic.com/",
-      });
-    }
-
-    if (data.LLM_PROVIDER === "gemini" && !data.GOOGLE_AI_API_KEY) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["GOOGLE_AI_API_KEY"],
-        message:
-          'GOOGLE_AI_API_KEY is required when LLM_PROVIDER is "gemini". ' +
-          "Get one at https://aistudio.google.com/apikey",
-      });
-    }
-  });
-
-/**
- * Validated and typed server environment. Crashes at import time if
- * validation fails, so you get immediate feedback during `next dev`.
- */
 export type ServerEnv = z.infer<typeof serverSchema>;
 
-/**
- * Parse and validate process.env. We call this lazily (on first access)
- * so that build-time type generation doesn't fail when env vars aren't set.
- */
 let _env: ServerEnv | null = null;
 
-/**
- * Returns the validated server environment, parsing on first call.
- * Throws a descriptive error if any variable is missing or invalid.
- */
 export function getEnv(): ServerEnv {
   if (_env) return _env;
 
@@ -114,16 +110,6 @@ export function getEnv(): ServerEnv {
   return _env;
 }
 
-/**
- * Convenience re-export: the validated environment object.
- *
- * Usage in any server-side file:
- *   import { env } from "@/lib/env";
- *   console.log(env.MCP_SERVER_URL);
- *
- * This triggers validation on first access. If you see an error during
- * `next dev`, it means an env var is missing — check the error message.
- */
 export const env = new Proxy({} as ServerEnv, {
   get(_target, prop: string) {
     return getEnv()[prop as keyof ServerEnv];

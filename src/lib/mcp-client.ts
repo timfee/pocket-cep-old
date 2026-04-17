@@ -16,6 +16,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { LOG_TAGS } from "./constants";
+import { getErrorMessage } from "./errors";
 
 /**
  * Result from an MCP tool call, containing both the structured content
@@ -63,7 +64,7 @@ async function connect(
     await client.connect(transport);
   } catch (error) {
     await transport.close().catch(() => {});
-    const msg = error instanceof Error ? error.message : String(error);
+    const msg = getErrorMessage(error);
 
     if (msg.includes("fetch failed") || msg.includes("ECONNREFUSED")) {
       throw new Error(
@@ -122,7 +123,6 @@ export async function callMcpTool(
       rawResponse,
     };
   } finally {
-    // Always clean up the connection, even if the call fails.
     await transport.close();
     await client.close();
   }

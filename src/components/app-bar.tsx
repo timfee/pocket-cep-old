@@ -1,20 +1,20 @@
 /**
  * @file MD3-style top app bar.
  *
- * 48px height, matching Google Admin Console density. Shows the product
- * name on the left and user info + sign-out on the right.
+ * In user_oauth mode: shows the signed-in user's email and a sign-out button.
+ * In service_account mode: shows "Service Account" with no sign-out (since
+ * the session is auto-created and signing out would just re-create it).
  */
 
 "use client";
 
 import { authClient } from "@/lib/auth-client";
+import { SA_EMAIL_DOMAIN } from "@/lib/constants";
 
-/**
- * Top-level navigation bar displayed on every authenticated page.
- */
 export function AppBar() {
   const session = authClient.useSession();
   const user = session.data?.user;
+  const isAnonymous = user?.email?.endsWith(`@${SA_EMAIL_DOMAIN}`);
 
   const handleSignOut = async () => {
     await authClient.signOut();
@@ -36,16 +36,24 @@ export function AppBar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        {user && (
-          <span className="text-on-surface-variant text-xs max-sm:hidden">{user.email}</span>
+        {isAnonymous ? (
+          <span className="bg-surface-container text-on-surface-variant rounded-[var(--radius-xs)] px-2 py-0.5 text-xs font-medium">
+            Service Account
+          </span>
+        ) : (
+          <>
+            {user && (
+              <span className="text-on-surface-variant text-xs max-sm:hidden">{user.email}</span>
+            )}
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="state-layer text-on-surface-variant rounded-[var(--radius-xs)] px-3 py-1 text-xs font-medium"
+            >
+              Sign out
+            </button>
+          </>
         )}
-        <button
-          type="button"
-          onClick={handleSignOut}
-          className="state-layer text-on-surface-variant rounded-[var(--radius-xs)] px-3 py-1 text-xs font-medium"
-        >
-          Sign out
-        </button>
       </div>
     </header>
   );

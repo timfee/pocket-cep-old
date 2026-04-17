@@ -15,6 +15,7 @@
 
 import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
+import { LOG_TAGS } from "./constants";
 
 /**
  * All available flavor names. Each corresponds to a .env.test.{name} file
@@ -77,7 +78,7 @@ export function loadAllFlavors(): Map<FlavorName, Record<string, string>> {
   for (const name of FLAVOR_NAMES) {
     const filePath = resolve(process.cwd(), `.env.test.${name}`);
     if (!existsSync(filePath)) {
-      console.warn(`[flavors] Skipping missing flavor: .env.test.${name}`);
+      console.warn(LOG_TAGS.FLAVORS, `Skipping missing flavor: .env.test.${name}`);
       continue;
     }
     flavors.set(name, parseEnvFile(filePath));

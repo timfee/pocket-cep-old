@@ -1,24 +1,27 @@
 /**
  * @file App-wide constants for Pocket CEP.
- *
- * Centralizes magic strings, default model IDs, and the system prompt
- * template used by the chat agent. Keeping these in one place makes them
- * easy to find and tweak.
  */
 
 /**
- * Log tag prefixes for structured console output. Every console.log in
- * the app should use one of these so you can grep the output easily.
+ * Email domain for anonymous sessions in service_account mode.
+ * Matched in the app bar to show "Service Account" instead of the
+ * generated email address.
+ */
+export const SA_EMAIL_DOMAIN = "service-account.local";
+
+/**
+ * Structured log prefixes for each subsystem.
  */
 export const LOG_TAGS = {
   MCP: "[mcp]",
   CHAT: "[chat]",
   AUTH: "[auth]",
   ENV: "[env]",
+  FLAVORS: "[flavors]",
 } as const;
 
 /**
- * Default model IDs when LLM_MODEL is not set in the environment.
+ * Default model IDs used when LLM_MODEL is not set.
  */
 export const DEFAULT_MODELS = {
   claude: "claude-sonnet-4-20250514",
@@ -26,16 +29,14 @@ export const DEFAULT_MODELS = {
 } as const;
 
 /**
- * Maximum number of agent loop iterations before we stop. This prevents
- * runaway tool-calling loops where the LLM keeps requesting tools
- * without producing a final answer.
+ * Prevents runaway tool-calling loops where the LLM keeps requesting
+ * tools without producing a final answer.
  */
 export const MAX_AGENT_ITERATIONS = 10;
 
 /**
- * Human-readable names for Chrome activity event types. Matches the
- * EVENT_NAME_MAPPING from the upstream MCP server at
- * /home/feel/cmcp/lib/constants.js:136-147.
+ * Human-readable names for Chrome activity event types.
+ * Matches EVENT_NAME_MAPPING from the upstream MCP server.
  */
 export const EVENT_DISPLAY_NAMES: Record<string, string> = {
   browserCrashEvent: "Browser crash",
@@ -51,11 +52,6 @@ export const EVENT_DISPLAY_NAMES: Record<string, string> = {
   suspiciousUrlEvent: "Suspicious URL",
 } as const;
 
-/**
- * Builds the system prompt for the chat agent, personalized for the
- * selected user. The LLM sees this as its instructions for how to
- * investigate Chrome Enterprise issues.
- */
 export function buildSystemPrompt(selectedUserEmail: string): string {
   return `You are a Chrome Enterprise Premium admin assistant called "Pocket CEP."
 

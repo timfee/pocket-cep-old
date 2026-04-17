@@ -88,9 +88,8 @@ export async function* runAgentLoop(
   // cache because the access token is per-user.
   let mcpTools: LlmTool[];
   try {
-    const useCache = !accessToken && toolCache && Date.now() < toolCache.expiresAt;
-    if (useCache) {
-      mcpTools = toolCache!.tools;
+    if (!accessToken && toolCache && Date.now() < toolCache.expiresAt) {
+      mcpTools = toolCache.tools;
     } else {
       const rawTools = await listMcpTools(config.MCP_SERVER_URL, accessToken);
       mcpTools = rawTools.map((t) => ({
@@ -112,10 +111,7 @@ export async function* runAgentLoop(
 
   const systemPrompt = buildSystemPrompt(selectedUser);
 
-  // Build the full message history with the new user message appended.
   const messages: ChatMessage[] = [...conversationHistory, { role: "user", content: userMessage }];
-
-  // The agent loop: LLM generates → maybe calls tools → we feed results back.
   let toolResults: ToolResult[] | undefined;
 
   for (let iteration = 0; iteration < MAX_AGENT_ITERATIONS; iteration++) {
@@ -155,13 +151,11 @@ export async function* runAgentLoop(
       }
     }
 
-    // If the LLM didn't request any tools, we're done.
     if (stopReason === "end_turn" || pendingToolCalls.length === 0) {
       yield { type: "done" };
       return;
     }
 
-    // Execute each tool call against the MCP server.
     toolResults = [];
 
     for (const tc of pendingToolCalls) {

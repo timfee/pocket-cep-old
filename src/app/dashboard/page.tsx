@@ -2,8 +2,8 @@
  * @file Dashboard — the main authenticated interface.
  *
  * Three-panel layout: sidebar (user selection), center (chat), right
- * (MCP inspector). Sidebar collapses on mobile with user selector
- * appearing inline above the chat.
+ * (MCP inspector). Sidebar collapses on mobile with the user selector
+ * repositioned above the chat.
  */
 
 "use client";
@@ -24,6 +24,8 @@ export default function DashboardPage() {
     setProtocolEvents((prev) => [...prev, event]);
   }, []);
 
+  const toggleInspector = useCallback(() => setInspectorOpen((v) => !v), []);
+
   return (
     <div className="isolate flex h-dvh flex-col">
       <AppBar />
@@ -35,7 +37,7 @@ export default function DashboardPage() {
           <div className="border-on-surface/10 mt-auto flex flex-col gap-1 border-t pt-3">
             <button
               type="button"
-              onClick={() => setInspectorOpen(!inspectorOpen)}
+              onClick={toggleInspector}
               className="state-layer text-on-surface-variant flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-xs"
             >
               <svg viewBox="0 0 16 16" fill="currentColor" className="size-4 shrink-0">
@@ -70,6 +72,9 @@ export default function DashboardPage() {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
+          {/* Mobile user selector — shares state with sidebar instance via lifted props.
+              CSS max-md:hidden/md:hidden ensures only one is visible at a time, but
+              both mount. The UserSelector deduplicates fetches via its loading state. */}
           <div className="bg-surface border-on-surface/10 border-b p-2 md:hidden">
             <UserSelector selectedUser={selectedUser} onUserChange={setSelectedUser} />
           </div>
@@ -77,11 +82,7 @@ export default function DashboardPage() {
           <ChatPanel selectedUser={selectedUser} onProtocolEvent={handleProtocolEvent} />
         </div>
 
-        <InspectorPanel
-          events={protocolEvents}
-          isOpen={inspectorOpen}
-          onToggle={() => setInspectorOpen(!inspectorOpen)}
-        />
+        <InspectorPanel events={protocolEvents} isOpen={inspectorOpen} onToggle={toggleInspector} />
       </div>
     </div>
   );

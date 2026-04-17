@@ -15,11 +15,14 @@ import { resolve } from "path";
 import { serverSchema } from "./env";
 import { parseEnvFile } from "./env-flavors";
 import { getErrorMessage } from "./errors";
-import { probeMcpServer, probeAnthropicKey, probeGeminiKey } from "./doctor-checks";
-
-const PASS = "\x1b[32m✓\x1b[0m";
-const FAIL = "\x1b[31m✗\x1b[0m";
-const WARN = "\x1b[33m!\x1b[0m";
+import {
+  PASS,
+  FAIL,
+  WARN,
+  probeMcpServer,
+  probeAnthropicKey,
+  probeGeminiKey,
+} from "./doctor-checks";
 
 let passed = 0;
 let failed = 0;
@@ -89,14 +92,9 @@ async function main() {
     report(true, `AUTH_MODE: ${data.AUTH_MODE}`);
     report(true, `LLM_PROVIDER: ${data.LLM_PROVIDER}`);
 
-    const clientIdLooksValid =
-      data.GOOGLE_CLIENT_ID.length > 10 && data.GOOGLE_CLIENT_ID.includes(".");
-    report(
-      clientIdLooksValid,
-      clientIdLooksValid
-        ? "GOOGLE_CLIENT_ID format looks correct"
-        : "GOOGLE_CLIENT_ID looks unusual (expected format: *.apps.googleusercontent.com)",
-    );
+    if (data.AUTH_MODE === "user_oauth") {
+      report(true, `GOOGLE_CLIENT_ID: ${data.GOOGLE_CLIENT_ID}`);
+    }
   } else {
     report(false, "Environment variable validation failed:");
     for (const issue of parseResult.error.issues) {
