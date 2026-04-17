@@ -43,26 +43,6 @@ export const DEFAULT_MODELS = {
 export const MAX_AGENT_ITERATIONS = 10;
 
 /**
- * Human-readable names for Chrome activity event types. Used by the
- * frontend to render event badges. The keys are the raw event type
- * strings returned by the Chrome Enterprise audit log API (and surfaced
- * through the MCP server's activity tools).
- */
-export const EVENT_DISPLAY_NAMES: Record<string, string> = {
-  browserCrashEvent: "Browser crash",
-  browserExtensionInstallEvent: "Browser extension install",
-  contentTransferEvent: "Content transfer",
-  unscannedFileEvent: "Content unscanned",
-  dangerousDownloadEvent: "Malware transfer",
-  passwordChangedEvent: "Password changed",
-  passwordReuseEvent: "Password reuse",
-  sensitiveDataEvent: "Sensitive data transfer",
-  interstitialEvent: "Unsafe site visit",
-  urlFilteringInterstitialEvent: "URL filtering interstitial",
-  suspiciousUrlEvent: "Suspicious URL",
-} as const;
-
-/**
  * Builds the system prompt injected into every LLM conversation. The
  * selectedUserEmail is interpolated so the LLM knows which user the
  * admin is investigating and can scope its MCP tool calls accordingly.
@@ -83,6 +63,17 @@ You have access to MCP tools from the Chrome Enterprise Premium server. Use them
 - Verify their CEP license status
 - Inspect DLP rules that may affect them
 - Diagnose the environment health
+
+Tool-use rules:
+- get_chrome_activity_log: do NOT set \`eventName\`. The Admin Reports API only
+  accepts a small, undocumented set of event names and invented values
+  return a 400 error. Fetch unfiltered activity and group/summarize in
+  your response instead. For DLP-related questions specifically, the
+  Chrome audit log returns policy-violation events as part of the full
+  stream, so unfiltered fetches surface them.
+- For DLP rule configuration (not events), call list_dlp_rules.
+- If a tool returns isError: true, report the error in plain language
+  rather than retrying with a guessed argument.
 
 Provide clear, educational explanations of:
 - What each Chrome Enterprise feature does
