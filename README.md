@@ -8,7 +8,7 @@ Built with Next.js 16, the Vercel AI SDK v6, BetterAuth, Tailwind CSS 4, and the
 
 Pocket CEP gives Google Workspace administrators a chat interface to investigate Chrome Enterprise user problems. Select a user from a dropdown (populated from real Chrome activity logs), ask a question, and watch the AI agent call MCP tools to find answers.
 
-The app is deliberately educational. An **MCP Inspector** panel shows every JSON-RPC request and response exchanged with the MCP server, so developers can see exactly how the Model Context Protocol works under the hood.
+The app is deliberately educational. An **MCP Inspector** panel shows every JSON-RPC request and response exchanged with the MCP server, so developers can see how the Model Context Protocol works on the wire.
 
 ### Features
 
@@ -89,7 +89,7 @@ All app-side variables are validated at startup with Zod — missing or malforme
 
 ## Auth Modes
 
-Pocket CEP supports two authentication modes that control how it communicates with the MCP server. Choose the one that fits your environment.
+Pocket CEP supports two authentication modes that control how it communicates with the MCP server.
 
 ### `service_account` (default)
 
@@ -206,8 +206,7 @@ The simplest setup. Both services run on your machine.
 ```
 
 ```bash
-# Single terminal with auto-start:
-MCP_SERVER_CMD="npx @google/chrome-enterprise-premium-mcp@latest" npm run dev
+npm run dev:full
 ```
 
 ### Cloud Run / Docker
@@ -233,11 +232,9 @@ Key considerations:
 For workshops where multiple attendees use the same instance:
 
 1. Set up ADC on the host with a Workspace admin account
-2. Deploy Pocket CEP with `AUTH_MODE=service_account` and `MCP_SERVER_CMD` set
-3. Each attendee signs in with their Google account (basic scopes only)
-4. All MCP calls use the shared ADC credentials
-
-This avoids requiring every attendee to be a Workspace admin.
+2. Deploy Pocket CEP with `AUTH_MODE=service_account`
+3. Run the MCP server alongside it (separate process; same machine so it inherits ADC)
+4. Each attendee signs in with their Google account (basic scopes only); all MCP calls use the shared ADC credentials
 
 ## Project Structure
 
@@ -412,7 +409,7 @@ const result = streamText({
 return result.toUIMessageStreamResponse();
 ```
 
-Tools come from `src/lib/mcp-tools.ts`, which wraps each MCP tool as `dynamicTool({ inputSchema: jsonSchema(t.inputSchema), execute })`. The AI SDK's multi-step loop handles tool threading, so there is no hand-rolled agent loop.
+Tools come from `src/lib/mcp-tools.ts`, which wraps each MCP tool as `dynamicTool({ inputSchema: jsonSchema(t.inputSchema), execute })`. The AI SDK's multi-step loop handles tool-call threading.
 
 The MCP tool catalog is cached in-process (5 min TTL, keyed by a SHA-256 hash of the access token so `user_oauth` callers don't share catalogs).
 
@@ -422,7 +419,7 @@ MCP servers expose **prompts** in addition to tools — structured conversation 
 
 1. `GET /api/prompts` → MCP `prompts/list` → render one card per prompt (with the server-assigned `cep:*` name as a badge).
 2. Clicking a card → `POST /api/prompts` → MCP `prompts/get` → server returns the expanded message body.
-3. Pocket CEP sends that body as a user turn via `useChat().sendMessage({ text, metadata })`. The `metadata` tag collapses the message to a "⚡ Ran cep:health" chip in the UI, but the model still receives the full prompt (so its formatting rules are honored).
+3. Pocket CEP sends that body as a user turn via `useChat().sendMessage({ text, metadata })`. The `metadata` tag collapses the message to a "⚡ Ran cep:health" chip in the UI; the model receives the full prompt body.
 
 ### MCP communication
 

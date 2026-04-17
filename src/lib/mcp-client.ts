@@ -1,16 +1,15 @@
 /**
- * @file MCP client wrapper for connecting to the CEP MCP server over HTTP.
+ * @file MCP client wrapper for the CEP MCP server over HTTP.
  *
- * Uses the official MCP SDK's StreamableHTTPClientTransport to send JSON-RPC
- * 2.0 requests to the server's POST /mcp endpoint. Each function creates a
- * fresh connection, executes the operation, and closes it — keeping things
- * stateless (the upstream server uses sessionIdGenerator: undefined).
+ * Uses `StreamableHTTPClientTransport` from the official MCP SDK to
+ * send JSON-RPC 2.0 requests to `POST /mcp`. Each function opens a
+ * fresh connection, runs its operation, and closes it — matching the
+ * upstream server's stateless mode (`sessionIdGenerator: undefined`).
  *
- * In user_oauth mode, the user's Google access token is injected as a Bearer
- * header so the MCP server can forward it to Google APIs.
+ * In `user_oauth` mode, the user's Google access token is injected as
+ * a Bearer header so the MCP server forwards it to Google APIs.
  *
- * Extension point: to add retry logic or connection pooling, wrap the
- * callMcpTool function. The stateless design makes this straightforward.
+ * Extension point: to add retry or connection pooling, wrap `callMcpTool`.
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";

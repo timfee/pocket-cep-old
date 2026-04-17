@@ -1,9 +1,8 @@
 /**
  * @file Sidebar list of the most-active users in the last 10 days.
  *
- * Reads the same activity map the UserSelector uses and surfaces the
- * top five as a one-click roster — the "who should I look at next"
- * affordance. Clicking an entry selects that user in the chat.
+ * Reads the same activity map the UserSelector uses. Clicking an entry
+ * selects that user in the chat.
  */
 
 "use client";

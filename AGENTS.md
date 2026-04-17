@@ -63,9 +63,8 @@ export interface ToolExecutor { ... }
 
 ### Educational Comments
 
-This is an educational project. Comments should be more descriptive and beginner-friendly
-than usual, explaining extension points and design decisions. Don't go overboard - keep
-comments proportional to the complexity they explain.
+Comments should be descriptive and beginner-friendly, explaining extension points
+and design decisions. Keep them proportional to the complexity they explain.
 
 ### Code Organization
 
@@ -76,7 +75,7 @@ comments proportional to the complexity they explain.
 
 ## Core Principles
 
-Write code that is **accessible, performant, type-safe, and maintainable**. Focus on clarity and explicit intent over brevity.
+Write code that is **accessible, performant, type-safe, and maintainable**. Prefer clarity over brevity.
 
 ### Type Safety & Explicitness
 
@@ -97,9 +96,9 @@ Write code that is **accessible, performant, type-safe, and maintainable**. Focu
 
 ### Async & Promises
 
-- Always `await` promises in async functions - don't forget to use the return value
-- Use `async/await` syntax instead of promise chains for better readability
-- Handle errors appropriately in async code with try-catch blocks
+- Always `await` promises returned from async functions
+- Use `async/await` syntax instead of promise chains
+- Handle errors in async code with try/catch
 - Don't use async functions as Promise executors
 
 ### React & JSX

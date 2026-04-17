@@ -1,15 +1,11 @@
 /**
- * @file Returns the MCP server's prompt catalog and expands single prompts.
+ * @file Proxies the MCP server's prompt endpoints.
  *
- * GET  /api/prompts            → list available prompts (cached)
- * POST /api/prompts            → body { name, args? } returns expanded
- *                                messages. The server-authored prompt is
- *                                the authority on structure/tone/format.
- *
- * Pocket CEP uses this so the suggested-prompt cards represent real
- * server prompts (like `cep:health`) — clicking a card expands the
- * prompt server-side and sends the resulting text as a user message,
- * so the formatting contract encoded by the MCP server reaches the LLM.
+ * GET  /api/prompts  → `prompts/list` (cached 5 min per caller identity)
+ * POST /api/prompts  → body { name, args? }, returns { text }. We call
+ *                      the MCP server's `prompts/get` and concatenate
+ *                      its user-role text so the caller can send it as
+ *                      a single user turn.
  */
 
 import { createHash } from "node:crypto";
@@ -98,10 +94,9 @@ export async function POST(request: Request) {
     );
 
     /**
-     * Pocket CEP injects prompts as a single user turn, so we
-     * concatenate just the user-role text content. Non-text content
-     * and assistant/system roles are ignored for now — we can thread
-     * them through properly if a server prompt ever needs it.
+     * Concatenate user-role text only. Non-text content and
+     * assistant/system roles are ignored; add threaded handling when
+     * a server prompt needs it.
      */
     const text = messages
       .filter((m) => m.role === "user" && m.content.type === "text")

@@ -1,9 +1,9 @@
 /**
- * @file Main chat panel using the Vercel AI SDK v6 useChat hook.
+ * @file Main chat panel using the Vercel AI SDK v6 `useChat` hook.
  *
- * Scroll behavior: auto-follow the bottom while streaming ONLY when the
- * user is already near the bottom. If they scroll up, we stop chasing
- * and surface a "Jump to latest" pill to resume.
+ * Scroll behavior: auto-follow the bottom during streaming only when
+ * the user is within ~120px of the bottom. If they've scrolled up, we
+ * leave the viewport alone and show a "Jump to latest" pill.
  */
 
 "use client";

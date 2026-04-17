@@ -18,10 +18,10 @@ type ChatMessageProps = {
 };
 
 /**
- * Messages produced by clicking an MCP prompt card carry a tiny
- * metadata object. The UI collapses them to a compact chip so the full
- * prompt body (which can be hundreds of lines of formatting rules)
- * doesn't dominate the chat.
+ * Metadata attached by the chat panel when a user message was produced
+ * from clicking an MCP prompt card. We render those messages as a
+ * compact chip instead of showing the expanded prompt body, which can
+ * run hundreds of lines of formatting rules.
  */
 type PromptMetadata = { promptName?: string; promptTitle?: string };
 

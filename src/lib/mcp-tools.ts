@@ -1,15 +1,14 @@
 /**
  * @file Converts MCP tool definitions into AI SDK tool objects.
  *
- * MCP tools are discovered at runtime — their input schemas come from
- * the server as JSON Schema, and their types aren't known at build time.
- * The AI SDK's `dynamicTool` is the idiomatic fit: it accepts a JSON
- * Schema directly (via `jsonSchema`) and passes untyped args to `execute`.
+ * MCP tools are discovered at runtime, so their input types aren't
+ * known at build time. We wrap each one with the AI SDK's `dynamicTool`
+ * and pass the server's JSON Schema through `jsonSchema()`.
  *
- * The tool catalog is cached in-process with a short TTL so every chat
- * request doesn't pay a listTools round trip. Cache keys include a hash
- * of the access token so users in user_oauth mode don't see each other's
- * catalogs if the CEP server's tool visibility ever diverges by scope.
+ * The catalog is cached in-process with a short TTL so every chat
+ * request doesn't pay a listTools round trip. Cache keys include a
+ * hash of the access token; `user_oauth` callers don't share catalogs
+ * in case the CEP server's tool visibility diverges by scope.
  */
 
 import { createHash } from "node:crypto";
