@@ -53,12 +53,13 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
 
   const isLoading = status === "streaming" || status === "submitted";
   const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
+    const raf = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     });
+    return () => cancelAnimationFrame(raf);
   }, [messages]);
 
   const lastFiredStateRef = useRef<Map<string, string>>(new Map());
@@ -149,6 +150,8 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
             {error.message}
           </div>
         )}
+
+        <div ref={bottomRef} aria-hidden="true" />
       </div>
 
       <ChatInput

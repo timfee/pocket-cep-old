@@ -1,14 +1,13 @@
 /**
  * @file Chat message bubble rendering AI SDK v6 UIMessage parts.
- *
- * Tool parts in v6 are flat — no `toolInvocation` wrapper. See
- * `src/lib/tool-part.ts` for the shared type and state→label helper.
  */
 
 "use client";
 
 import { useState } from "react";
 import { Bot, Copy, Check } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/cn";
 import { isToolUIPart, getToolName } from "ai";
 import type { UIMessage } from "ai";
@@ -39,9 +38,16 @@ export function ChatMessage({ message }: ChatMessageProps) {
       >
         {message.parts.map((part, i) => {
           if (part.type === "text" && part.text) {
+            if (isUser) {
+              return (
+                <div key={i} className="leading-5 text-pretty whitespace-pre-wrap">
+                  {part.text}
+                </div>
+              );
+            }
             return (
-              <div key={i} className="leading-5 text-pretty whitespace-pre-wrap">
-                {part.text}
+              <div key={i} className="prose-chat">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
               </div>
             );
           }
@@ -114,7 +120,7 @@ function ToolPartCard({ part }: { part: InvocationPart }) {
 
       {expanded && (
         <div className="border-on-surface/5 border-t px-2.5 py-1.5">
-          <pre className="overflow-x-auto rounded-[var(--radius-xs)] bg-zinc-900 p-2 font-mono text-[11px] leading-4 text-zinc-300">
+          <pre className="bg-surface-container text-on-surface-variant overflow-x-auto rounded-[var(--radius-xs)] p-2 font-mono text-[11px] leading-4">
             {JSON.stringify(
               {
                 input: part.input,

@@ -111,3 +111,85 @@ body {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+.prose-chat {
+  line-height: 1.3rem;
+  color: var(--color-on-surface);
+}
+.prose-chat > * + * { margin-top: 0.5rem; }
+.prose-chat p { margin: 0; }
+.prose-chat h1, .prose-chat h2, .prose-chat h3, .prose-chat h4 {
+  font-weight: 600;
+  color: var(--color-on-surface);
+  line-height: 1.2;
+}
+.prose-chat h1 { font-size: 1.05rem; }
+.prose-chat h2 { font-size: 1rem; }
+.prose-chat h3 { font-size: 0.95rem; }
+.prose-chat h4 { font-size: 0.9rem; }
+.prose-chat strong { font-weight: 600; color: var(--color-on-surface); }
+.prose-chat em { font-style: italic; }
+.prose-chat a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose-chat a:hover { color: var(--color-primary-hover); }
+.prose-chat ul, .prose-chat ol {
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+.prose-chat ul { list-style: disc; }
+.prose-chat ol { list-style: decimal; }
+.prose-chat li { margin: 0.125rem 0; }
+.prose-chat li > p { display: inline; }
+.prose-chat code {
+  background: var(--color-surface-container);
+  color: var(--color-on-surface);
+  padding: 0.1rem 0.3rem;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+.prose-chat pre {
+  background: var(--color-surface-container);
+  color: var(--color-on-surface);
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  border: 1px solid var(--color-outline);
+}
+.prose-chat pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+.prose-chat blockquote {
+  border-left: 3px solid var(--color-outline-variant);
+  padding-left: 0.75rem;
+  color: var(--color-on-surface-variant);
+  margin: 0.25rem 0;
+}
+.prose-chat hr {
+  border: none;
+  border-top: 1px solid var(--color-outline);
+  margin: 0.75rem 0;
+}
+.prose-chat table {
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  display: block;
+  overflow-x: auto;
+}
+.prose-chat th, .prose-chat td {
+  border: 1px solid var(--color-outline);
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+}
+.prose-chat th {
+  background: var(--color-surface-dim);
+  font-weight: 600;
+}

@@ -1,15 +1,21 @@
 /**
  * @file Server-side user search combobox with debounced typeahead.
+ *
+ * Pre-fetches a recent-activity map on mount and uses it to:
+ * - surface users with activity even before the directory search returns
+ * - show a dot + event count on users with recent Chrome events
+ * - rank active users above inactive ones in search results
  */
 
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Search, Loader2, UserX, Check } from "lucide-react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { Search, Loader2, UserX, Check, Activity } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import { getErrorMessage } from "@/lib/errors";
 import type { DirectoryUser } from "@/app/api/users/route";
+import type { UserActivity } from "@/app/api/users/activity/route";
 
 type UserSelectorProps = {
   selectedUser: string;
@@ -17,6 +23,7 @@ type UserSelectorProps = {
 };
 
 type SearchState = "idle" | "loading" | "results" | "empty" | "error";
+type ActivityMap = Record<string, UserActivity>;
 
 export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) {
   const [query, setQuery] = useState(selectedUser);
@@ -24,6 +31,7 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
   const [state, setState] = useState<SearchState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [activity, setActivity] = useState<ActivityMap>({});
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const abortRef = useRef<AbortController>(null);
@@ -77,7 +85,20 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
 
   useEffect(() => {
     search("");
+
+    let cancelled = false;
+    fetch("/api/users/activity")
+      .then((r) => (r.ok ? r.json() : { activity: {} }))
+      .then((body: { activity?: ActivityMap }) => {
+        if (cancelled) return;
+        setActivity(body.activity ?? {});
+      })
+      .catch(() => {
+        /* silent — activity is optional */
+      });
+
     return () => {
+      cancelled = true;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       abortRef.current?.abort();
     };
@@ -92,8 +113,8 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      if (users.length > 0) {
-        selectUser(users[0].email);
+      if (rankedUsers.length > 0) {
+        selectUser(rankedUsers[0].email);
       } else if (query.includes("@")) {
         selectUser(query);
       }
@@ -106,6 +127,33 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
   const handleBlur = () => {
     setTimeout(() => setIsOpen(false), 200);
   };
+
+  /**
+   * Rank so users with recent activity float to the top (more events
+   * first), then directory order for everything else. When the query is
+   * empty and directory results don't cover all active users, synthesize
+   * minimal entries for the active-but-unseen users so admins can still
+   * pick them from the initial dropdown.
+   */
+  const rankedUsers = useMemo<DirectoryUser[]>(() => {
+    const byEmail = new Map<string, DirectoryUser>();
+    for (const u of users) byEmail.set(u.email.toLowerCase(), u);
+
+    if (!query) {
+      for (const email of Object.keys(activity)) {
+        if (!byEmail.has(email)) {
+          byEmail.set(email, { email, name: "", suspended: false });
+        }
+      }
+    }
+
+    return Array.from(byEmail.values()).sort((a, b) => {
+      const aCount = activity[a.email.toLowerCase()]?.eventCount ?? 0;
+      const bCount = activity[b.email.toLowerCase()]?.eventCount ?? 0;
+      if (aCount !== bCount) return bCount - aCount;
+      return a.email.localeCompare(b.email);
+    });
+  }, [users, activity, query]);
 
   const isCredentialError =
     error &&
@@ -169,7 +217,7 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
               </div>
             )}
 
-            {state === "empty" && (
+            {state === "empty" && rankedUsers.length === 0 && (
               <div className="flex flex-col items-center gap-1.5 px-3 py-4 text-center">
                 <UserX className="text-on-surface-muted size-5" />
                 <p className="text-on-surface-muted text-xs">
@@ -178,33 +226,52 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
               </div>
             )}
 
-            {(state === "results" || (state === "loading" && users.length > 0)) && (
+            {rankedUsers.length > 0 && (
               <ul id="user-listbox" role="listbox" className="max-h-60 overflow-y-auto py-1">
-                {users.map((user) => (
-                  <li
-                    key={user.email}
-                    role="option"
-                    aria-selected={user.email === selectedUser}
-                    onMouseDown={() => selectUser(user.email)}
-                    className={cn(
-                      "state-layer flex cursor-pointer items-center gap-2 px-3 py-1.5",
-                      user.email === selectedUser && "bg-primary-light",
-                    )}
-                  >
-                    {user.email === selectedUser && (
-                      <Check className="text-primary size-3.5 shrink-0" />
-                    )}
-                    <div className={cn("min-w-0 flex-1", user.email !== selectedUser && "pl-5.5")}>
-                      <p className="truncate text-xs">{user.email}</p>
-                      {user.name && user.name !== user.email && (
-                        <p className="text-on-surface-muted truncate text-[10px]">{user.name}</p>
+                {rankedUsers.map((user) => {
+                  const act = activity[user.email.toLowerCase()];
+                  return (
+                    <li
+                      key={user.email}
+                      role="option"
+                      aria-selected={user.email === selectedUser}
+                      onMouseDown={() => selectUser(user.email)}
+                      className={cn(
+                        "state-layer flex cursor-pointer items-center gap-2 px-3 py-1.5",
+                        user.email === selectedUser && "bg-primary-light",
                       )}
-                    </div>
-                    {user.suspended && (
-                      <span className="text-on-surface-muted text-[10px]">Suspended</span>
-                    )}
-                  </li>
-                ))}
+                    >
+                      {user.email === selectedUser ? (
+                        <Check className="text-primary size-3.5 shrink-0" />
+                      ) : act ? (
+                        <span
+                          className="bg-primary size-1.5 shrink-0 rounded-full"
+                          aria-label="Has recent activity"
+                        />
+                      ) : (
+                        <span className="size-1.5 shrink-0" aria-hidden="true" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs">{user.email}</p>
+                        {user.name && user.name !== user.email && (
+                          <p className="text-on-surface-muted truncate text-[10px]">{user.name}</p>
+                        )}
+                      </div>
+                      {act && (
+                        <span
+                          className="text-primary flex shrink-0 items-center gap-0.5 font-mono text-[10px] tabular-nums"
+                          title={`${act.eventCount} recent event${act.eventCount === 1 ? "" : "s"}`}
+                        >
+                          <Activity className="size-3" />
+                          {act.eventCount}
+                        </span>
+                      )}
+                      {user.suspended && (
+                        <span className="text-on-surface-muted text-[10px]">Suspended</span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
