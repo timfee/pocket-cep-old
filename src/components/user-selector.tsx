@@ -112,11 +112,20 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
   };
 
   if (error) {
+    const isCredentialError =
+      error.includes("credentials") ||
+      error.includes("expired") ||
+      error.includes("quota") ||
+      error.includes("gcloud");
+
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         <label className="text-on-surface text-xs font-medium">Investigate user</label>
-        <div className="bg-error-light text-error ring-error/20 rounded-[var(--radius-xs)] px-3 py-2 text-xs ring-1">
-          {error}
+        <div className="bg-error-light text-error ring-error/20 rounded-[var(--radius-sm)] px-3 py-2.5 text-xs leading-5 ring-1">
+          <p className="font-medium">
+            {isCredentialError ? "Credential Error" : "Connection Error"}
+          </p>
+          <p className="text-error/80 mt-1">{error}</p>
         </div>
         <button
           type="button"

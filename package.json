@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "clean": "rm -rf .next",
     "dev": "next dev",
     "dev:full": "concurrently -k -n app,mcp -c blue,green \"next dev\" \"GCP_STDIO=false PORT=4000 ${MCP_SERVER_CMD:-npx @google/chrome-enterprise-premium-mcp@latest}\"",
     "build": "next build",

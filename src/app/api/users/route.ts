@@ -75,13 +75,20 @@ export async function GET() {
     const message = getErrorMessage(profilesResult.reason, "MCP call failed");
     console.error(LOG_TAGS.MCP, "Both MCP calls failed:", message);
 
-    const isFetchFailed = message.includes("fetch failed") || message.includes("ECONNREFUSED");
-    const hint = isFetchFailed
-      ? `MCP server is not reachable at ${config.MCP_SERVER_URL}. ` +
-        "Start it with: npm run dev:full"
-      : message;
+    return NextResponse.json(
+      { error: diagnoseError(message, config.MCP_SERVER_URL) },
+      { status: 502 },
+    );
+  }
 
-    return NextResponse.json({ error: hint }, { status: 502 });
+  /**
+   * Even when the MCP call "succeeds", the tool can return isError: true
+   * with credential errors embedded in the content. Check for common ADC
+   * failures and surface them clearly instead of showing an empty user list.
+   */
+  const credentialError = detectCredentialError(profilesResult, activityResult);
+  if (credentialError) {
+    return NextResponse.json({ error: credentialError }, { status: 502 });
   }
 
   const profileEmails = new Map<string, { lastActive?: string }>();
@@ -190,4 +197,105 @@ export function extractActivityCounts(content: unknown, out: Map<string, number>
       }
     }
   }
+}
+
+/** Known error patterns from the MCP server that indicate credential issues. */
+const CREDENTIAL_ERROR_PATTERNS = [
+  "invalid_grant",
+  "invalid_rapt",
+  "Application Default Credentials are not set up",
+  "requires a quota project",
+  "insufficient authentication scopes",
+  "UNAUTHENTICATED",
+] as const;
+
+/**
+ * Inspects MCP tool results for credential-related errors. Returns a
+ * user-friendly message if found, or null if results look normal.
+ */
+function detectCredentialError(
+  profilesResult: PromiseSettledResult<{ content: unknown; isError: boolean }>,
+  activityResult: PromiseSettledResult<{ content: unknown; isError: boolean }>,
+): string | null {
+  const contents: string[] = [];
+
+  for (const result of [profilesResult, activityResult]) {
+    if (result.status !== "fulfilled") continue;
+    if (!result.value.isError) continue;
+
+    const content = result.value.content;
+    if (Array.isArray(content)) {
+      for (const item of content) {
+        if (item && typeof item === "object" && "text" in item) {
+          contents.push(String(item.text));
+        }
+      }
+    }
+  }
+
+  const allText = contents.join(" ");
+
+  for (const pattern of CREDENTIAL_ERROR_PATTERNS) {
+    if (allText.includes(pattern)) {
+      return formatCredentialError(pattern);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Translates a raw credential error pattern into an actionable message
+ * that tells the developer exactly what to do.
+ */
+function formatCredentialError(pattern: string): string {
+  if (pattern === "invalid_grant" || pattern === "invalid_rapt") {
+    return (
+      "Google credentials have expired (RAPT re-authentication required). " +
+      "Re-run: gcloud auth application-default login --scopes=... " +
+      "(see README for the full scopes command)"
+    );
+  }
+
+  if (pattern.includes("Application Default Credentials")) {
+    return (
+      "Google Application Default Credentials are not configured. " +
+      "Run: gcloud auth application-default login --scopes=... " +
+      "(see README for the full scopes command)"
+    );
+  }
+
+  if (pattern.includes("quota project")) {
+    return (
+      "Google API requires a quota project. " +
+      "Run: gcloud auth application-default set-quota-project YOUR_PROJECT_ID"
+    );
+  }
+
+  if (pattern.includes("insufficient authentication scopes")) {
+    return (
+      "Current credentials don't have the required scopes. " +
+      "Re-run: gcloud auth application-default login --scopes=... " +
+      "(see README for the full scopes command)"
+    );
+  }
+
+  return `Google API credential error: ${pattern}`;
+}
+
+/**
+ * Translates a raw MCP error message into an actionable hint.
+ */
+function diagnoseError(message: string, mcpServerUrl: string): string {
+  if (message.includes("fetch failed") || message.includes("ECONNREFUSED")) {
+    return `MCP server is not reachable at ${mcpServerUrl}. Start it with: npm run dev:full`;
+  }
+
+  for (const pattern of CREDENTIAL_ERROR_PATTERNS) {
+    if (message.includes(pattern)) {
+      return formatCredentialError(pattern);
+    }
+  }
+
+  return message;
 }
