@@ -39,10 +39,12 @@ test.describe("Chat transport wiring", () => {
     await expect(page).toHaveURL(/\/dashboard/);
 
     const searchInput = page.getByRole("combobox", { name: /Investigate user/i });
+    const textarea = page.getByRole("textbox", { name: /Chat message input/i });
 
     await searchInput.fill("alice@example.com");
     await searchInput.press("Enter");
-    await page.getByRole("button", { name: /Recent Chrome activity/i }).click();
+    await textarea.fill("first question");
+    await textarea.press("Enter");
 
     await expect.poll(() => chatRequests.length).toBe(1);
     expect(chatRequests[0]).toMatchObject({ selectedUser: "alice@example.com" });
@@ -51,8 +53,8 @@ test.describe("Chat transport wiring", () => {
 
     await searchInput.fill("bob@example.com");
     await searchInput.press("Enter");
-    await page.getByRole("textbox", { name: /Chat message input/i }).fill("another prompt");
-    await page.getByRole("button", { name: /Send message/i }).click();
+    await textarea.fill("second question");
+    await textarea.press("Enter");
 
     await expect.poll(() => chatRequests.length).toBe(2);
     expect(chatRequests[1]).toMatchObject({ selectedUser: "bob@example.com" });

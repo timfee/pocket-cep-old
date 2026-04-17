@@ -13,58 +13,67 @@ import { DefaultChatTransport, isToolUIPart } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
-import { ArrowDown, ArrowUpRight, FileSearch, Scale, Stethoscope } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUpRight,
+  FileSearch,
+  Loader2,
+  Scale,
+  Stethoscope,
+  Terminal,
+} from "lucide-react";
 import type { InvocationPart } from "@/lib/tool-part";
+import type { Prompt } from "@modelcontextprotocol/sdk/types.js";
 
 type ChatPanelProps = {
   selectedUser: string;
   onToolInvocation?: (invocation: InvocationPart) => void;
 };
 
-type SuggestedPrompt = {
-  title: string;
-  body: string;
-  icon: React.ComponentType<{ className?: string }>;
-};
+/**
+ * Maps a prompt name to an icon. The MCP prompt API doesn't carry
+ * iconography, so we infer from the name. Anything else falls through
+ * to a generic terminal glyph.
+ */
+function iconForPrompt(name: string): React.ComponentType<{ className?: string }> {
+  const n = name.toLowerCase();
+  if (n.includes("health")) return Stethoscope;
+  if (n.includes("license") || n.includes("subscription") || n.includes("optimize")) return Scale;
+  if (n.includes("activity") || n.includes("audit") || n.includes("expert")) return FileSearch;
+  return Terminal;
+}
 
-const SUGGESTED_WITH_USER: SuggestedPrompt[] = [
-  {
-    title: "Recent Chrome activity",
-    body: "Show the last 10 days of audit events for this user.",
-    icon: FileSearch,
-  },
-  {
-    title: "CEP license status",
-    body: "Does this user have an active Chrome Enterprise Premium seat?",
-    icon: Scale,
-  },
-  {
-    title: "Environment health",
-    body: "Run the diagnostic: APIs, connectors, policies.",
-    icon: Stethoscope,
-  },
-];
-
-const SUGGESTED_WITHOUT_USER: SuggestedPrompt[] = [
-  {
-    title: "Environment health",
-    body: "Run the diagnostic: APIs, connectors, policies.",
-    icon: Stethoscope,
-  },
-  {
-    title: "Active DLP rules",
-    body: "List the Data Loss Prevention rules currently in effect.",
-    icon: FileSearch,
-  },
-  {
-    title: "CEP subscription",
-    body: "Check the org's Chrome Enterprise Premium subscription.",
-    icon: Scale,
-  },
-];
+/**
+ * Prettifies prompt names like `cep:health` to `Health`. Falls back to
+ * the raw name when there's no prefix to strip. Prefer `title` if the
+ * server supplies one.
+ */
+function titleForPrompt(p: Prompt): string {
+  if (p.title) return p.title;
+  const bare = p.name.includes(":") ? p.name.split(":").slice(1).join(":") : p.name;
+  return bare.charAt(0).toUpperCase() + bare.slice(1);
+}
 
 export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
   const [input, setInput] = useState("");
+  const [prompts, setPrompts] = useState<Prompt[]>([]);
+  const [promptExpanding, setPromptExpanding] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/prompts")
+      .then((r) => (r.ok ? r.json() : { prompts: [] }))
+      .then((body: { prompts?: Prompt[] }) => {
+        if (cancelled) return;
+        setPrompts(body.prompts ?? []);
+      })
+      .catch(() => {
+        /* silent — prompts are optional */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const selectedUserRef = useRef(selectedUser);
   useEffect(() => {
@@ -73,7 +82,6 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
 
   const resolveBody = useCallback(() => ({ selectedUser: selectedUserRef.current }), []);
   const transport = useMemo(
-    // eslint-disable-next-line react-hooks/refs -- body is resolveBody, not a ref read
     () => new DefaultChatTransport({ api: "/api/chat", body: resolveBody }),
     [resolveBody],
   );
@@ -126,17 +134,48 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
     }
   }, [messages, onToolInvocation]);
 
-  const handleSend = (text: string) => {
-    if (!text.trim()) return;
-    sendMessage({ text });
-    setInput("");
-    setIsPinnedToBottom(true);
-  };
+  const handleSend = useCallback(
+    (text: string) => {
+      if (!text.trim()) return;
+      sendMessage({ text });
+      setInput("");
+      setIsPinnedToBottom(true);
+    },
+    [sendMessage],
+  );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     handleSend(input);
   };
+
+  /**
+   * Expands a server-authored prompt and sends it as a user turn. The
+   * server's prompt carries the formatting contract (e.g. `cep:health`
+   * dictates a specific table + severity-tier structure) so the model
+   * sees those rules when it generates the response.
+   */
+  const runPrompt = useCallback(
+    async (name: string) => {
+      if (promptExpanding || isStreaming) return;
+      setPromptExpanding(name);
+      try {
+        const res = await fetch("/api/prompts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        const body: { text?: string; error?: string } = await res.json();
+        if (!res.ok || !body.text) throw new Error(body.error ?? "Prompt expansion failed");
+        handleSend(body.text);
+      } catch {
+        /* silent — the LLM call will surface any real error */
+      } finally {
+        setPromptExpanding(null);
+      }
+    },
+    [promptExpanding, isStreaming, handleSend],
+  );
 
   const isEmpty = messages.length === 0;
   const lastMsg = messages[messages.length - 1];
@@ -146,14 +185,22 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
       lastMsg.role !== "assistant" ||
       lastMsg.parts.every((p) => p.type !== "text" || !p.text));
 
-  const prompts = selectedUser ? SUGGESTED_WITH_USER : SUGGESTED_WITHOUT_USER;
+  const suggestablePrompts = useMemo(
+    () => prompts.filter((p) => !p.arguments?.some((a) => a.required)).slice(0, 6),
+    [prompts],
+  );
 
   return (
     <div className="bg-surface-dim flex min-h-0 flex-1 flex-col">
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div ref={scrollRef} data-testid="chat-scroll" className="flex-1 overflow-y-auto px-6 py-8">
           {isEmpty ? (
-            <EmptyState selectedUser={selectedUser} prompts={prompts} onPick={handleSend} />
+            <EmptyState
+              selectedUser={selectedUser}
+              prompts={suggestablePrompts}
+              expandingName={promptExpanding}
+              onPick={runPrompt}
+            />
           ) : (
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
               {messages.map((msg) => (
@@ -211,11 +258,13 @@ function TypingIndicator() {
 function EmptyState({
   selectedUser,
   prompts,
+  expandingName,
   onPick,
 }: {
   selectedUser: string;
-  prompts: SuggestedPrompt[];
-  onPick: (prompt: string) => void;
+  prompts: Prompt[];
+  expandingName: string | null;
+  onPick: (name: string) => void;
 }) {
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-8 pt-6">
@@ -237,31 +286,57 @@ function EmptyState({
         </p>
       </div>
 
-      <div className="flex flex-col gap-2.5">
-        <h3 className="text-on-surface-variant text-xs font-medium">Suggested</h3>
-        <ul role="list" className="grid gap-2 sm:grid-cols-2">
-          {prompts.map((prompt, i) => (
-            <li key={prompt.title} className={i === 2 ? "sm:col-span-2" : undefined}>
-              <button
-                type="button"
-                onClick={() => onPick(prompt.body)}
-                className={`surface-raised group slide-up stagger-${i + 1} flex h-full w-full flex-col gap-2 rounded-[var(--radius-sm)] p-3.5 text-left`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className="bg-primary-light text-primary grid size-7 shrink-0 place-items-center rounded-[var(--radius-xs)]">
-                    <prompt.icon className="size-3.5" />
-                  </span>
-                  <span className="text-on-surface flex-1 text-sm font-medium">{prompt.title}</span>
-                  <ArrowUpRight className="text-on-surface-muted size-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                </div>
-                <p className="text-on-surface-variant pl-[calc(--spacing(7)+--spacing(2.5))] text-[0.8125rem] leading-5">
-                  {prompt.body}
-                </p>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {prompts.length > 0 && (
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-baseline justify-between">
+            <h3 className="text-on-surface-variant text-xs font-medium">Server prompts</h3>
+            <span className="text-on-surface-muted font-mono text-[0.6875rem]">
+              from MCP · prompts/list
+            </span>
+          </div>
+          <ul role="list" className="grid gap-2 sm:grid-cols-2">
+            {prompts.map((prompt, i) => {
+              const Icon = iconForPrompt(prompt.name);
+              const busy = expandingName === prompt.name;
+              return (
+                <li
+                  key={prompt.name}
+                  className={i === 2 && prompts.length === 3 ? "sm:col-span-2" : undefined}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onPick(prompt.name)}
+                    disabled={busy || expandingName !== null}
+                    className={`surface-raised group slide-up stagger-${i + 1} flex h-full w-full flex-col gap-2 rounded-[var(--radius-sm)] p-3.5 text-left disabled:opacity-60`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="bg-primary-light text-primary grid size-7 shrink-0 place-items-center rounded-[var(--radius-xs)]">
+                        <Icon className="size-3.5" />
+                      </span>
+                      <span className="text-on-surface flex-1 text-sm font-medium">
+                        {titleForPrompt(prompt)}
+                      </span>
+                      <span className="text-on-surface-muted font-mono text-[0.6875rem]">
+                        {prompt.name}
+                      </span>
+                      {busy ? (
+                        <Loader2 className="text-on-surface-muted spin-slow size-3.5" />
+                      ) : (
+                        <ArrowUpRight className="text-on-surface-muted size-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                      )}
+                    </div>
+                    {prompt.description && (
+                      <p className="text-on-surface-variant pl-[calc(--spacing(7)+--spacing(2.5))] text-[0.8125rem] leading-5">
+                        {prompt.description}
+                      </p>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

@@ -15,8 +15,11 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Prompt, PromptMessage } from "@modelcontextprotocol/sdk/types.js";
 import { LOG_TAGS } from "./constants";
 import { getErrorMessage } from "./errors";
+
+export type { Prompt, PromptMessage };
 
 /**
  * Result from an MCP tool call, containing both the structured content
@@ -172,6 +175,48 @@ export async function listMcpTools(
         properties: {},
       },
     }));
+  } finally {
+    await client.close();
+  }
+}
+
+/**
+ * Lists prompts the MCP server exposes (e.g. `cep:health`). Prompts are
+ * server-authored conversation starters; using them means the host
+ * inherits the server's tone, structure, and formatting contracts.
+ */
+export async function listMcpPrompts(serverUrl: string, accessToken?: string): Promise<Prompt[]> {
+  console.log(LOG_TAGS.MCP, "Listing available prompts...");
+
+  const { client } = await connect(serverUrl, accessToken);
+
+  try {
+    const result = await client.listPrompts();
+    console.log(LOG_TAGS.MCP, `Found ${result.prompts.length} prompts`);
+    return result.prompts;
+  } finally {
+    await client.close();
+  }
+}
+
+/**
+ * Expands a server prompt into concrete messages. Arguments are passed
+ * through as-is; the server performs any substitution and returns the
+ * final `PromptMessage[]` for the host to splice into the chat.
+ */
+export async function getMcpPrompt(
+  serverUrl: string,
+  name: string,
+  args: Record<string, string> | undefined,
+  accessToken?: string,
+): Promise<PromptMessage[]> {
+  console.log(LOG_TAGS.MCP, `Expanding prompt: ${name}`);
+
+  const { client } = await connect(serverUrl, accessToken);
+
+  try {
+    const result = await client.getPrompt({ name, arguments: args });
+    return result.messages;
   } finally {
     await client.close();
   }
