@@ -20,7 +20,7 @@ export function InspectorPanel({ invocations, isOpen, onToggle }: InspectorPanel
   if (!isOpen) return null;
 
   return (
-    <aside className="bg-surface border-on-surface/10 flex w-72 shrink-0 flex-col border-l lg:w-80">
+    <aside className="bg-surface border-on-surface/10 flex min-h-0 w-72 shrink-0 flex-col border-l lg:w-80">
       <div className="border-on-surface/10 flex items-center justify-between border-b px-3 py-2">
         <div className="flex items-center gap-1.5">
           <Wrench className="text-primary size-3.5" />

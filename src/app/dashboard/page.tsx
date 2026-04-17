@@ -91,10 +91,14 @@ export default function DashboardPage() {
       <AppBar />
 
       <div className="mx-auto flex w-full max-w-[1680px] flex-1 overflow-hidden">
-        <aside className="bg-surface border-on-surface/10 flex w-72 shrink-0 flex-col border-r max-md:hidden lg:w-80">
-          <div className="flex flex-1 flex-col overflow-y-auto">
+        <aside className="bg-surface border-on-surface/10 flex min-h-0 w-72 shrink-0 flex-col border-r max-md:hidden lg:w-80">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             <section className="flex flex-col gap-2 px-4 py-4">
-              <UserSelector selectedUser={selectedUser} onUserChange={setSelectedUser} />
+              <UserSelector
+                selectedUser={selectedUser}
+                onUserChange={setSelectedUser}
+                activity={activity}
+              />
             </section>
 
             <section className="border-on-surface/10 flex flex-col gap-2 border-t px-4 py-4">
@@ -137,9 +141,13 @@ export default function DashboardPage() {
           </div>
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="bg-surface border-on-surface/10 border-b p-2 md:hidden">
-            <UserSelector selectedUser={selectedUser} onUserChange={setSelectedUser} />
+            <UserSelector
+              selectedUser={selectedUser}
+              onUserChange={setSelectedUser}
+              activity={activity}
+            />
           </div>
 
           <ChatPanel selectedUser={selectedUser} onToolInvocation={handleToolInvocation} />

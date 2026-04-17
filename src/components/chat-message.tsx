@@ -40,20 +40,20 @@ export function ChatMessage({ message }: ChatMessageProps) {
           if (part.type === "text" && part.text) {
             if (isUser) {
               return (
-                <div key={i} className="leading-5 text-pretty whitespace-pre-wrap">
+                <div key={`text-${i}`} className="leading-5 text-pretty whitespace-pre-wrap">
                   {part.text}
                 </div>
               );
             }
             return (
-              <div key={i} className="prose-chat">
+              <div key={`text-${i}`} className="prose-chat">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
               </div>
             );
           }
 
           if (isToolUIPart(part)) {
-            return <ToolPartCard key={i} part={part} />;
+            return <ToolPartCard key={part.toolCallId ?? `tool-${i}`} part={part} />;
           }
 
           return null;

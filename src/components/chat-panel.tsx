@@ -149,9 +149,9 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
   const prompts = selectedUser ? SUGGESTED_WITH_USER : SUGGESTED_WITHOUT_USER;
 
   return (
-    <div className="bg-surface-dim flex flex-1 flex-col">
+    <div className="bg-surface-dim flex min-h-0 flex-1 flex-col">
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-8">
+        <div ref={scrollRef} data-testid="chat-scroll" className="flex-1 overflow-y-auto px-6 py-8">
           {isEmpty ? (
             <EmptyState selectedUser={selectedUser} prompts={prompts} onPick={handleSend} />
           ) : (

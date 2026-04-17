@@ -20,20 +20,21 @@ import type { UserActivity } from "@/app/api/users/activity/route";
 type UserSelectorProps = {
   selectedUser: string;
   onUserChange: (email: string) => void;
+  /** Owned by the dashboard — passed down to avoid a second fetch. */
+  activity: Record<string, UserActivity>;
 };
 
 type SearchState = "idle" | "loading" | "results" | "empty" | "error";
-type ActivityMap = Record<string, UserActivity>;
 
-export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) {
+export function UserSelector({ selectedUser, onUserChange, activity }: UserSelectorProps) {
   const [query, setQuery] = useState(selectedUser);
   const [users, setUsers] = useState<DirectoryUser[]>([]);
   const [state, setState] = useState<SearchState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
-  const [activity, setActivity] = useState<ActivityMap>({});
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
   const abortRef = useRef<AbortController>(null);
   const requestIdRef = useRef(0);
 
@@ -85,24 +86,12 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
 
   useEffect(() => {
     search("");
-
-    let cancelled = false;
-    fetch("/api/users/activity")
-      .then((r) => (r.ok ? r.json() : { activity: {} }))
-      .then((body: { activity?: ActivityMap }) => {
-        if (cancelled) return;
-        setActivity(body.activity ?? {});
-      })
-      .catch(() => {
-        /* silent — activity is optional */
-      });
-
     return () => {
-      cancelled = true;
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
       abortRef.current?.abort();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search]);
 
   const selectUser = (email: string) => {
     onUserChange(email);
@@ -125,7 +114,8 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
   };
 
   const handleBlur = () => {
-    setTimeout(() => setIsOpen(false), 200);
+    if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+    blurTimeoutRef.current = setTimeout(() => setIsOpen(false), 200);
   };
 
   /**
