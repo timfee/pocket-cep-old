@@ -203,12 +203,13 @@ export function ChatPanel({ selectedUser, onToolInvocation, onClearSelectedUser 
   );
 
   const isEmpty = messages.length === 0;
-  const lastMsg = messages[messages.length - 1];
-  const showTyping =
-    isStreaming &&
-    (!lastMsg ||
-      lastMsg.role !== "assistant" ||
-      lastMsg.parts.every((p) => p.type !== "text" || !p.text));
+  /**
+   * Show the typing indicator for the entire streaming window, not
+   * only until the first text delta lands. If the model calls a
+   * second tool after writing some text, the typing dots still make
+   * it obvious the agent is still working.
+   */
+  const showTyping = isStreaming;
 
   const suggestablePrompts = useMemo(
     () => prompts.filter((p) => !p.arguments?.some((a) => a.required)).slice(0, 6),
