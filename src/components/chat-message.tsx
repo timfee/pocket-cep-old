@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bot, Copy, Check, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -12,6 +12,8 @@ import { cn } from "@/lib/cn";
 import { isToolUIPart, getToolName } from "ai";
 import type { UIMessage } from "ai";
 import { toolPartLabel, type InvocationPart } from "@/lib/tool-part";
+import { reportAuthErrorGlobally } from "@/lib/auth-aware-fetch";
+import type { AuthErrorPayload } from "@/lib/auth-errors";
 
 type ChatMessageProps = {
   message: UIMessage;
@@ -122,6 +124,13 @@ function ToolPartCard({ part }: { part: InvocationPart }) {
         ? "bg-success-light text-green-700"
         : "bg-primary-light text-primary";
 
+  const errorText = "errorText" in part ? part.errorText : undefined;
+  const authPayload = parseAuthPayload(errorText);
+
+  if (authPayload) {
+    return <AuthToolCard payload={authPayload} />;
+  }
+
   return (
     <div className="bg-surface-dim ring-on-surface/10 my-1.5 rounded-[var(--radius-sm)] ring-1">
       <button
@@ -149,13 +158,71 @@ function ToolPartCard({ part }: { part: InvocationPart }) {
               {
                 input: part.input,
                 output: "output" in part ? part.output : undefined,
-                errorText: "errorText" in part ? part.errorText : undefined,
+                errorText,
               },
               null,
               2,
             )}
           </pre>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Runtime detection of the AuthErrorPayload wire shape inside a tool
+ * part's errorText. The AI SDK serializes thrown errors' messages, so
+ * AuthError's JSON-stringified payload arrives as a plain string — we
+ * parse it here to render an actionable card.
+ */
+function parseAuthPayload(errorText: unknown): AuthErrorPayload | null {
+  if (typeof errorText !== "string") return null;
+  try {
+    const parsed: unknown = JSON.parse(errorText);
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "code" in parsed &&
+      typeof (parsed as { code: unknown }).code === "string" &&
+      "remedy" in parsed &&
+      typeof (parsed as { remedy: unknown }).remedy === "string"
+    ) {
+      return parsed as AuthErrorPayload;
+    }
+  } catch {
+    // Not JSON — fall through and let the generic card handle it.
+  }
+  return null;
+}
+
+/**
+ * Distinguished auth-error card. Amber (call to action) instead of red
+ * (failure), so the user's eye goes straight to the remedy.
+ */
+function AuthToolCard({ payload }: { payload: AuthErrorPayload }) {
+  useEffect(() => {
+    reportAuthErrorGlobally(payload);
+  }, [payload]);
+
+  return (
+    <div className="bg-warning-light text-warning ring-warning/30 my-1.5 rounded-[var(--radius-sm)] px-3 py-2 text-xs ring-1">
+      <p className="font-semibold">Authentication required</p>
+      <p className="text-warning/80 mt-0.5 leading-4">{payload.remedy}</p>
+      {payload.command && (
+        <code className="bg-surface-container text-on-surface-variant mt-1.5 inline-block rounded-[var(--radius-xs)] px-1.5 py-0.5 font-mono text-[11px]">
+          {payload.command}
+        </code>
+      )}
+      {payload.docsUrl && (
+        <a
+          href={payload.docsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary ml-2 text-[11px] underline"
+        >
+          Details
+        </a>
       )}
     </div>
   );
