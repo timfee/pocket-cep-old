@@ -88,10 +88,7 @@ describe("toAuthError", () => {
   });
 
   it("AuthError serializes to the wire payload via toPayload()", () => {
-    const err = toAuthError(
-      { error: "invalid_grant", error_subtype: "invalid_rapt" },
-      "adc",
-    )!;
+    const err = toAuthError({ error: "invalid_grant", error_subtype: "invalid_rapt" }, "adc")!;
     const payload = err.toPayload();
     expect(payload).toEqual({
       code: "invalid_rapt",

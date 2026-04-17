@@ -20,7 +20,6 @@ export type AuthErrorCode =
   | "unauthenticated"
   | "unknown_auth";
 
-
 /**
  * Wire shape every surface consumes: API 401 bodies, banner state, and
  * chat tool-error cards all serialize to this.
@@ -33,7 +32,6 @@ export interface AuthErrorPayload {
   command?: string;
   docsUrl?: string;
 }
-
 
 /**
  * Error class that carries an `AuthErrorPayload`. Throwing this from a
@@ -86,7 +84,6 @@ export class AuthError extends Error implements AuthErrorPayload {
   }
 }
 
-
 /**
  * Type guard. Survives structured-clone and cross-realm issues by also
  * accepting `name === "AuthError"` shapes — useful when the error has
@@ -95,12 +92,9 @@ export class AuthError extends Error implements AuthErrorPayload {
 export function isAuthError(err: unknown): err is AuthError {
   return (
     err instanceof AuthError ||
-    (typeof err === "object" &&
-      err !== null &&
-      (err as { name?: string }).name === "AuthError")
+    (typeof err === "object" && err !== null && (err as { name?: string }).name === "AuthError")
   );
 }
-
 
 type GoogleOAuthBody = {
   error?: string;
@@ -109,14 +103,12 @@ type GoogleOAuthBody = {
   error_subtype?: string;
 };
 
-
 function asOAuthBody(value: unknown): GoogleOAuthBody | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as GoogleOAuthBody;
   if (typeof candidate.error !== "string") return null;
   return candidate;
 }
-
 
 function extractOAuthBody(err: unknown): GoogleOAuthBody | null {
   const direct = asOAuthBody(err);
@@ -131,7 +123,6 @@ function extractOAuthBody(err: unknown): GoogleOAuthBody | null {
   return null;
 }
 
-
 function extractMessage(err: unknown): string {
   if (typeof err === "string") return err;
   if (err instanceof Error) return err.message;
@@ -141,7 +132,6 @@ function extractMessage(err: unknown): string {
   }
   return "";
 }
-
 
 function buildPayload(
   code: AuthErrorCode,
@@ -197,7 +187,6 @@ function buildPayload(
   }
 }
 
-
 /**
  * Classifies an arbitrary error as an `AuthError` when possible. Returns
  * null if the error isn't auth-related so callers can rethrow untouched.
@@ -208,10 +197,7 @@ function buildPayload(
  *     `UNAUTHENTICATED`, or the "Could not load the default credentials" phrase
  *   - MCP tool-error strings like "API Error: invalid_grant - ..."
  */
-export function toAuthError(
-  err: unknown,
-  source: AuthErrorPayload["source"],
-): AuthError | null {
+export function toAuthError(err: unknown, source: AuthErrorPayload["source"]): AuthError | null {
   const body = extractOAuthBody(err);
   if (body) {
     const docsUrl = body.error_uri;
@@ -235,7 +221,9 @@ export function toAuthError(
   if (/invalid_grant/i.test(message)) {
     return new AuthError(buildPayload("invalid_grant", source));
   }
-  if (/Could not load the default credentials|application[- ]default[- ]credentials/i.test(message)) {
+  if (
+    /Could not load the default credentials|application[- ]default[- ]credentials/i.test(message)
+  ) {
     return new AuthError(buildPayload("no_adc", source));
   }
   if (/UNAUTHENTICATED|unauthorized/i.test(message)) {

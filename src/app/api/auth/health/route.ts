@@ -34,10 +34,7 @@ export async function GET() {
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (isAuthError(error)) {
-      return NextResponse.json(
-        { ok: false, error: error.toPayload() },
-        { status: 401 },
-      );
+      return NextResponse.json({ ok: false, error: error.toPayload() }, { status: 401 });
     }
     return NextResponse.json({ ok: false, error: getErrorMessage(error) }, { status: 500 });
   }
