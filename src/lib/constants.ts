@@ -32,8 +32,8 @@ export const LOG_TAGS = {
  * newer model versions are released and tested.
  */
 export const DEFAULT_MODELS = {
-  claude: "claude-sonnet-4-20250514",
-  gemini: "gemini-2.0-flash",
+  claude: "claude-sonnet-4-6",
+  gemini: "gemini-2.5-flash",
 } as const;
 
 /**
@@ -69,12 +69,16 @@ export const EVENT_DISPLAY_NAMES: Record<string, string> = {
  * admin is investigating and can scope its MCP tool calls accordingly.
  */
 export function buildSystemPrompt(selectedUserEmail: string): string {
-  return `You are a Chrome Enterprise Premium admin assistant called "Pocket CEP."
+  const userContext = selectedUserEmail
+    ? `\nThe admin is investigating user "${selectedUserEmail}". When calling MCP tools,
+always scope to this user:
+- get_chrome_activity_log: use userKey="${selectedUserEmail}"
+- check_user_cep_license: use userId="${selectedUserEmail}"
+- Other tools: filter or focus on this user where applicable\n`
+    : "";
 
-The admin has selected user "${selectedUserEmail}" for investigation. When calling
-activity log tools, filter for this user's email. When checking licenses or policies,
-focus on this specific user.
-
+  return `You are a Chrome Enterprise Premium admin assistant.
+${userContext}
 You have access to MCP tools from the Chrome Enterprise Premium server. Use them to:
 - Check the user's recent Chrome activity (login events, policy violations, downloads)
 - Verify their CEP license status

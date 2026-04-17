@@ -42,6 +42,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }));
 
 import { createClaudeAdapter } from "@/lib/llm/claude";
+import { DEFAULT_MODELS } from "@/lib/constants";
 
 describe("createClaudeAdapter", () => {
   beforeEach(() => {
@@ -153,7 +154,7 @@ describe("createClaudeAdapter", () => {
 
     // Verify the model was passed to the SDK.
     const callArgs = mockStream.mock.calls[0][0];
-    expect(callArgs.model).toContain("claude");
+    expect(callArgs.model).toBe(DEFAULT_MODELS.claude);
   });
 
   it("uses a custom model when provided", async () => {

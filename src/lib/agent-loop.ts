@@ -144,28 +144,36 @@ export async function* runAgentLoop(
 
     let stopReason: "end_turn" | "tool_use" = "end_turn";
 
-    for await (const event of adapter.runTurn({
-      systemPrompt,
-      messages,
-      tools: mcpTools,
-      toolResults,
-    })) {
-      if (event.type === "text") {
-        yield { type: "text", text: event.text };
-      }
+    try {
+      for await (const event of adapter.runTurn({
+        systemPrompt,
+        messages,
+        tools: mcpTools,
+        toolResults,
+      })) {
+        if (event.type === "text") {
+          yield { type: "text", text: event.text };
+        }
 
-      if (event.type === "tool_call") {
-        pendingToolCalls.push({
-          id: event.id,
-          name: event.name,
-          input: event.input,
-        });
-        yield { type: "tool_call", name: event.name, input: event.input };
-      }
+        if (event.type === "tool_call") {
+          pendingToolCalls.push({
+            id: event.id,
+            name: event.name,
+            input: event.input,
+          });
+          yield { type: "tool_call", name: event.name, input: event.input };
+        }
 
-      if (event.type === "finish") {
-        stopReason = event.stopReason;
+        if (event.type === "finish") {
+          stopReason = event.stopReason;
+        }
       }
+    } catch (error) {
+      const msg = getErrorMessage(error);
+      console.error(LOG_TAGS.CHAT, "LLM error:", msg);
+      yield { type: "error", message: diagnoseLlmError(msg) };
+      yield { type: "done" };
+      return;
     }
 
     if (stopReason === "end_turn" || pendingToolCalls.length === 0) {
@@ -235,4 +243,17 @@ function rawReqPayload(name: string, args: Record<string, unknown>): Record<stri
     method: "tools/call",
     params: { name, arguments: args },
   };
+}
+
+function diagnoseLlmError(msg: string): string {
+  if (msg.includes("rate_limit") || msg.includes("429") || msg.includes("quota")) {
+    return "LLM API rate limit or quota exceeded. Wait a moment and try again, or check your API plan limits.";
+  }
+  if (msg.includes("401") || msg.includes("authentication") || msg.includes("invalid_api_key")) {
+    return "LLM API key is invalid or expired. Check your ANTHROPIC_API_KEY or GOOGLE_AI_API_KEY in .env.local.";
+  }
+  if (msg.includes("overloaded") || msg.includes("503")) {
+    return "LLM API is temporarily overloaded. Try again in a few seconds.";
+  }
+  return `LLM error: ${msg}`;
 }

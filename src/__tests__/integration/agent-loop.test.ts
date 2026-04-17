@@ -85,8 +85,9 @@ describe("runAgentLoop", () => {
 
     const events = await collectEvents("How is this user?", "alice@test.com");
 
-    expect(events.some((e) => e.type === "text")).toBe(true);
-    expect(events[events.length - 1]).toEqual({ type: "done" });
+    const types = events.map((e) => e.type);
+    expect(types).toContain("text");
+    expect(types[types.length - 1]).toBe("done");
   });
 
   it("executes tool calls and yields mcp_request/mcp_response events", async () => {
@@ -118,12 +119,17 @@ describe("runAgentLoop", () => {
 
     const events = await collectEvents("Check activity", "alice@test.com");
 
-    // Should see: tool_call → mcp_request → mcp_response → tool_result → text → done
     const types = events.map((e) => e.type);
-    expect(types).toContain("tool_call");
-    expect(types).toContain("mcp_request");
-    expect(types).toContain("mcp_response");
-    expect(types).toContain("tool_result");
+
+    // Verify the ordering contract: tool_call must come before mcp_request
+    const toolCallIdx = types.indexOf("tool_call");
+    const mcpReqIdx = types.indexOf("mcp_request");
+    const mcpResIdx = types.indexOf("mcp_response");
+    const toolResultIdx = types.indexOf("tool_result");
+
+    expect(toolCallIdx).toBeLessThan(mcpReqIdx);
+    expect(mcpReqIdx).toBeLessThan(mcpResIdx);
+    expect(mcpResIdx).toBeLessThan(toolResultIdx);
     expect(types).toContain("text");
     expect(types[types.length - 1]).toBe("done");
   });
