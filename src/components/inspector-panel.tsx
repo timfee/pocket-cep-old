@@ -17,18 +17,7 @@ type InspectorPanelProps = {
 };
 
 export function InspectorPanel({ invocations, isOpen, onToggle }: InspectorPanelProps) {
-  if (!isOpen) {
-    return (
-      <button
-        type="button"
-        onClick={onToggle}
-        className="bg-surface ring-on-surface/10 text-on-surface-variant hover:bg-surface-dim fixed top-14 right-3 z-10 flex items-center gap-1.5 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[11px] shadow-[var(--shadow-elevation-2)] ring-1"
-      >
-        <Wrench className="size-3.5" />
-        Inspector ({invocations.length})
-      </button>
-    );
-  }
+  if (!isOpen) return null;
 
   return (
     <aside className="bg-surface border-on-surface/10 flex w-72 shrink-0 flex-col border-l lg:w-80">

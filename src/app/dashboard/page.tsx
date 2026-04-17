@@ -1,26 +1,29 @@
 /**
  * @file Dashboard — the main authenticated interface.
+ *
+ * Tool invocations are upserted by `toolCallId` so state transitions
+ * (input-streaming → input-available → output-available) replace the
+ * existing entry in place rather than appending duplicate rows.
  */
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { AppBar } from "@/components/app-bar";
 import { UserSelector } from "@/components/user-selector";
 import { ChatPanel } from "@/components/chat-panel";
 import { InspectorPanel } from "@/components/inspector-panel";
+import { ActivityRoster } from "@/components/activity-roster";
 import type { InvocationPart } from "@/lib/tool-part";
+import type { UserActivity } from "@/app/api/users/activity/route";
+import { Wrench, Eraser } from "lucide-react";
 
 export default function DashboardPage() {
   const [selectedUser, setSelectedUser] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [toolInvocations, setToolInvocations] = useState<InvocationPart[]>([]);
+  const [activity, setActivity] = useState<Record<string, UserActivity>>({});
 
-  /**
-   * Upsert by `toolCallId` — state transitions replace the row rather
-   * than append. Bail out with the same array reference if the part is
-   * identical, so React can skip the inspector re-render.
-   */
   const handleToolInvocation = useCallback((part: InvocationPart) => {
     const id = part.toolCallId;
     if (!id) return;
@@ -36,23 +39,88 @@ export default function DashboardPage() {
 
   const toggleInspector = useCallback(() => setInspectorOpen((v) => !v), []);
 
+  /**
+   * The sidebar and the selector both use the same activity map. We
+   * fetch it here so the sidebar roster and the combobox stay in sync
+   * without double-fetching.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/users/activity")
+      .then((r) => (r.ok ? r.json() : { activity: {} }))
+      .then((body: { activity?: Record<string, UserActivity> }) => {
+        if (cancelled) return;
+        setActivity(body.activity ?? {});
+      })
+      .catch(() => {
+        /* silent — activity is optional */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * `/` focuses the user search from anywhere on the page, as long as
+   * the user isn't already typing into some other field.
+   */
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      const search = document.getElementById("user-search");
+      if (search instanceof HTMLInputElement) {
+        e.preventDefault();
+        search.focus();
+        search.select();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   return (
     <div className="isolate flex h-dvh flex-col">
       <AppBar />
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className="bg-surface border-on-surface/10 flex shrink-0 flex-col gap-3 border-r p-3 max-md:hidden md:w-64 lg:w-72">
-          <UserSelector selectedUser={selectedUser} onUserChange={setSelectedUser} />
+        <aside className="bg-surface border-on-surface/10 flex w-72 shrink-0 flex-col border-r max-md:hidden lg:w-80">
+          <div className="border-on-surface/5 flex items-center justify-between border-b px-4 py-3">
+            <span className="eyebrow">Directory</span>
+            <span className="text-on-surface-muted font-mono text-[10px]">
+              {Object.keys(activity).length > 0 && `${Object.keys(activity).length} active`}
+            </span>
+          </div>
 
-          <div className="border-on-surface/10 mt-auto flex flex-col gap-1 border-t pt-3">
+          <div className="px-3 py-3">
+            <UserSelector selectedUser={selectedUser} onUserChange={setSelectedUser} />
+          </div>
+
+          <div className="border-on-surface/5 border-t px-3 py-3">
+            <ActivityRoster
+              activity={activity}
+              selectedUser={selectedUser}
+              onPick={setSelectedUser}
+            />
+          </div>
+
+          <div className="border-on-surface/5 mt-auto flex flex-col gap-0.5 border-t px-2 py-2">
             <button
               type="button"
               onClick={toggleInspector}
-              className="state-layer text-on-surface-variant flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-xs"
+              className="state-layer text-on-surface-variant hover:text-on-surface flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-xs"
             >
-              MCP Inspector
+              <Wrench className="size-3.5" />
+              <span>MCP Inspector</span>
               {toolInvocations.length > 0 && (
-                <span className="bg-primary-light text-primary ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums">
+                <span className="bg-primary-light text-primary ml-auto rounded-full px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums">
                   {toolInvocations.length}
                 </span>
               )}
@@ -62,9 +130,10 @@ export default function DashboardPage() {
               type="button"
               onClick={() => setToolInvocations([])}
               disabled={toolInvocations.length === 0}
-              className="state-layer text-on-surface-muted rounded-[var(--radius-xs)] px-2 py-1.5 text-xs disabled:opacity-40"
+              className="state-layer text-on-surface-muted hover:text-on-surface flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-xs disabled:opacity-40"
             >
-              Clear inspector
+              <Eraser className="size-3.5" />
+              <span>Clear inspector</span>
             </button>
           </div>
         </aside>
