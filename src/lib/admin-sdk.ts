@@ -5,7 +5,7 @@
 import { getErrorMessage } from "./errors";
 import { LOG_TAGS } from "./constants";
 import { getADCToken, getQuotaProject } from "./adc";
-import { isAuthError } from "./auth-errors";
+import { isAuthError, toAuthError } from "./auth-errors";
 
 /**
  * Converts a user-typed search string into Admin SDK query syntax.
@@ -81,6 +81,15 @@ export async function searchUsers(
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
+      /**
+       * Mid-request auth failures (token revoked between ADC and this
+       * call, or the OAuth user's scopes were rescinded) land here. The
+       * Directory API returns a Google error JSON that toAuthError can
+       * classify — route it through the same AuthError contract so the
+       * banner still lights up.
+       */
+      const authErr = toAuthError(body, "admin-sdk");
+      if (authErr) throw authErr;
       console.error(LOG_TAGS.USERS, `Admin SDK users.list failed (${response.status}):`, body);
       return [];
     }
