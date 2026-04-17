@@ -9,20 +9,36 @@
 
 import { useMemo } from "react";
 import { cn } from "@/lib/cn";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { UserActivity } from "@/app/api/users/activity/route";
 
 type ActivityRosterProps = {
   activity: Record<string, UserActivity>;
   selectedUser: string;
+  isLoading?: boolean;
   onPick: (email: string) => void;
 };
 
-export function ActivityRoster({ activity, selectedUser, onPick }: ActivityRosterProps) {
+export function ActivityRoster({ activity, selectedUser, isLoading, onPick }: ActivityRosterProps) {
   const ranked = useMemo(() => {
     const entries = Object.entries(activity);
     entries.sort((a, b) => b[1].eventCount - a[1].eventCount);
     return entries.slice(0, 6);
   }, [activity]);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-0.5" aria-hidden="true">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="flex h-8 w-full items-center gap-2 px-2 py-1.5">
+            <Skeleton className="size-1.5 shrink-0 rounded-full" />
+            <Skeleton className="h-3 flex-1" />
+            <Skeleton className="h-3 w-6 shrink-0" />
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   if (ranked.length === 0) {
     return <p className="text-on-surface-muted text-xs">No recent activity.</p>;

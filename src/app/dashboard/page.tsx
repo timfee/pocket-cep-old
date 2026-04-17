@@ -23,6 +23,7 @@ export default function DashboardPage() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [toolInvocations, setToolInvocations] = useState<InvocationPart[]>([]);
   const [activity, setActivity] = useState<Record<string, UserActivity>>({});
+  const [isActivityLoading, setIsActivityLoading] = useState(true);
 
   const handleToolInvocation = useCallback((part: InvocationPart) => {
     const id = part.toolCallId;
@@ -43,16 +44,47 @@ export default function DashboardPage() {
    * The sidebar and the selector both use the same activity map. We
    * fetch it here so the sidebar roster and the combobox stay in sync
    * without double-fetching.
+   *
+   * Cached in sessionStorage so navigating to/from the dashboard doesn't
+   * trigger redundant expensive fetches unless the user hard-refreshes.
    */
   useEffect(() => {
     let cancelled = false;
+
+    try {
+      const cached = sessionStorage.getItem("cep_activity_cache");
+      if (cached) {
+        /**
+         * Read-through cache: we mirror sessionStorage into React state
+         * on mount. The eslint-plugin-react-hooks rule flags sync setState
+         * in effects, but this is the recommended hydration pattern for
+         * browser-only storage; the SSR render uses the default {} state.
+         */
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setActivity(JSON.parse(cached));
+
+        setIsActivityLoading(false);
+        return;
+      }
+    } catch {
+      // ignore parsing/storage errors
+    }
+
     fetch("/api/users/activity")
       .then((r) => (r.ok ? r.json() : { activity: {} }))
       .then((body: { activity?: Record<string, UserActivity> }) => {
         if (cancelled) return;
-        setActivity(body.activity ?? {});
+        const fetchedActivity = body.activity ?? {};
+        setActivity(fetchedActivity);
+        setIsActivityLoading(false);
+        try {
+          sessionStorage.setItem("cep_activity_cache", JSON.stringify(fetchedActivity));
+        } catch {
+          // ignore
+        }
       })
       .catch(() => {
+        if (!cancelled) setIsActivityLoading(false);
         /* silent — activity is optional */
       });
     return () => {
@@ -109,6 +141,7 @@ export default function DashboardPage() {
               <ActivityRoster
                 activity={activity}
                 selectedUser={selectedUser}
+                isLoading={isActivityLoading}
                 onPick={setSelectedUser}
               />
             </section>

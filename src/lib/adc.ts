@@ -21,7 +21,11 @@ export async function getADCToken(): Promise<string> {
   try {
     const { GoogleAuth } = await import("google-auth-library");
     const auth = new GoogleAuth({
-      scopes: ["https://www.googleapis.com/auth/admin.directory.user.readonly"],
+      scopes: [
+        "https://www.googleapis.com/auth/admin.directory.user.readonly",
+        "https://www.googleapis.com/auth/admin.reports.usage.readonly",
+        "https://www.googleapis.com/auth/admin.reports.audit.readonly",
+      ],
     });
     const client = await auth.getClient();
     const tokenResponse = await client.getAccessToken();
