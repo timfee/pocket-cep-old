@@ -15,6 +15,7 @@
     "test:unit": "vitest run src/__tests__/unit",
     "test:integration": "vitest run src/__tests__/integration",
     "test:e2e": "playwright test",
+    "setup": "tsx scripts/setup.ts",
     "doctor": "tsx src/lib/doctor.ts",
     "check": "npm run typecheck && npm run lint && npm run test:unit && npm run test:integration"
   },
@@ -40,6 +41,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@inquirer/prompts": "^8.4.1",
     "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
