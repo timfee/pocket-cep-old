@@ -4,6 +4,15 @@
  * In user_oauth mode: shows the signed-in user's email and a sign-out button.
  * In service_account mode: shows "Service Account" with no sign-out (since
  * the session is auto-created and signing out would just re-create it).
+ *
+ * The anonymous-session detection works by checking the email domain:
+ * BetterAuth's anonymous plugin generates emails like `anon_xyz@service-account.local`.
+ * This is cheaper than an extra API call and works offline.
+ *
+ * Sign-out uses a full page navigation (`window.location.href = "/"`) rather
+ * than a client-side router push because BetterAuth needs the cookie to be
+ * fully cleared before the landing page renders, and a hard navigation
+ * guarantees the middleware re-evaluates the session.
  */
 
 "use client";
@@ -11,6 +20,11 @@
 import { authClient } from "@/lib/auth-client";
 import { SA_EMAIL_DOMAIN } from "@/lib/constants";
 
+/**
+ * Top app bar displaying the current auth state. Adapts its content
+ * based on whether the session is an anonymous service-account session
+ * or a real Google OAuth session.
+ */
 export function AppBar() {
   const session = authClient.useSession();
   const user = session.data?.user;

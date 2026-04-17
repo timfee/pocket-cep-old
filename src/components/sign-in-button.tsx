@@ -3,6 +3,17 @@
  *
  * Follows Google's Identity Services button guidelines:
  * white background, Google logo, specific padding/sizing.
+ *
+ * Uses BetterAuth's `signIn.social` method which redirects the browser
+ * to Google's OAuth consent screen. After the user consents, Google
+ * redirects back to /api/auth/callback/google (handled by the catch-all
+ * route), which exchanges the code for tokens and sets the session
+ * cookie. The `callbackURL` parameter tells BetterAuth where to
+ * redirect the user after the entire flow completes.
+ *
+ * This component is only rendered on the landing page (user_oauth mode).
+ * In service_account mode, the user never sees it because the middleware
+ * auto-redirects to the dashboard.
  */
 
 "use client";
@@ -10,7 +21,8 @@
 import { authClient } from "@/lib/auth-client";
 
 /**
- * Renders a Google-branded sign-in button.
+ * Google-branded OAuth sign-in button. Initiates the full OAuth 2.0
+ * authorization code flow via BetterAuth's social sign-in method.
  */
 export function SignInButton() {
   const handleSignIn = async () => {

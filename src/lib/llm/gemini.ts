@@ -8,6 +8,10 @@
  *   - generateContentStream for real-time output
  *   - functionDeclarations for tool/function calling
  *   - FunctionResponse parts to feed tool output back to the model
+ *
+ * Unlike Anthropic, Gemini does not assign IDs to function calls, so this
+ * adapter synthesizes IDs (e.g. "gemini_toolName_timestamp") that the
+ * agent loop can use to correlate results back to calls.
  */
 
 import {
@@ -23,7 +27,8 @@ import type { LlmAdapter, LlmEvent, ChatMessage, ToolResult } from "./types";
 
 /**
  * Creates a Gemini adapter instance configured with the given API key
- * and optional model override.
+ * and optional model override. The returned adapter is stateless — it
+ * creates a new streaming request on each runTurn() call.
  */
 export function createGeminiAdapter(apiKey: string, model?: string): LlmAdapter {
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -31,10 +36,12 @@ export function createGeminiAdapter(apiKey: string, model?: string): LlmAdapter 
 
   return {
     async *runTurn({ systemPrompt, messages, tools, toolResults }) {
-      // Convert tool definitions into Gemini's functionDeclarations format.
-      // This is a genuine SDK boundary: MCP uses JSON Schema (Record<string, unknown>)
-      // while Gemini expects its own Schema type. The runtime shapes are compatible
-      // but the TS types diverge, so we build typed FunctionDeclaration objects.
+      /**
+       * Gemini uses its own FunctionDeclaration type rather than raw JSON
+       * Schema. The shapes are compatible at runtime but the TS types
+       * differ, so toGeminiFunctionSchema() handles the translation and
+       * strips unsupported JSON Schema keywords.
+       */
       const declarations: FunctionDeclaration[] = tools.map((tool) => ({
         name: tool.name,
         description: tool.description,
@@ -43,7 +50,6 @@ export function createGeminiAdapter(apiKey: string, model?: string): LlmAdapter 
 
       const geminiTools = declarations.length > 0 ? [{ functionDeclarations: declarations }] : [];
 
-      // Build the Gemini content array from our messages + tool results.
       const contents = buildGeminiContents(messages, toolResults);
 
       console.log(
@@ -51,7 +57,11 @@ export function createGeminiAdapter(apiKey: string, model?: string): LlmAdapter 
         `Gemini turn: ${contents.length} content parts, ${tools.length} tools`,
       );
 
-      // Get the generative model and start streaming.
+      /**
+       * Gemini's systemInstruction is set at model creation time (not per
+       * request), so we create a fresh model instance for each turn. This
+       * is lightweight — the actual API call happens in generateContentStream.
+       */
       const generativeModel = genAI.getGenerativeModel({
         model: modelId,
         systemInstruction: systemPrompt,
@@ -63,7 +73,6 @@ export function createGeminiAdapter(apiKey: string, model?: string): LlmAdapter 
       let hasToolCalls = false;
 
       for await (const chunk of response.stream) {
-        // Check each candidate's content parts for text or function calls.
         for (const part of chunk.candidates?.[0]?.content?.parts ?? []) {
           if (part.text) {
             yield { type: "text", text: part.text } satisfies LlmEvent;
@@ -73,8 +82,12 @@ export function createGeminiAdapter(apiKey: string, model?: string): LlmAdapter 
             hasToolCalls = true;
             yield {
               type: "tool_call",
-              // Gemini doesn't use IDs for function calls — we generate one
-              // so the agent loop can match results back to calls.
+              /**
+               * Synthetic ID: Gemini doesn't provide tool call IDs, but our
+               * LlmEvent type requires one. The agent loop later strips this
+               * prefix in buildGeminiContents to recover the original tool name
+               * when sending results back.
+               */
               id: `gemini_${part.functionCall.name}_${Date.now()}`,
               name: part.functionCall.name,
               input: (part.functionCall.args as Record<string, unknown>) ?? {},
@@ -83,6 +96,11 @@ export function createGeminiAdapter(apiKey: string, model?: string): LlmAdapter 
         }
       }
 
+      /**
+       * Gemini doesn't have an explicit stop_reason field like Anthropic.
+       * Instead, we infer the stop reason from whether any function calls
+       * appeared in the response.
+       */
       yield {
         type: "finish",
         stopReason: hasToolCalls ? "tool_use" : "end_turn",
@@ -93,8 +111,12 @@ export function createGeminiAdapter(apiKey: string, model?: string): LlmAdapter 
 
 /**
  * Converts our generic message format into Gemini's content format.
- * Gemini uses "user" and "model" roles (not "assistant"), and tool
- * results are sent as FunctionResponse parts.
+ *
+ * Key differences from Anthropic:
+ *   - Role mapping: "assistant" -> "model"
+ *   - Tool results use the special "function" role with FunctionResponse parts
+ *   - The synthetic tool call IDs are stripped back to the original tool name
+ *     using regex (removing the "gemini_" prefix and "_timestamp" suffix)
  */
 function buildGeminiContents(messages: ChatMessage[], toolResults?: ToolResult[]): Content[] {
   const contents: Content[] = messages.map((msg) => ({
@@ -102,10 +124,10 @@ function buildGeminiContents(messages: ChatMessage[], toolResults?: ToolResult[]
     parts: [{ text: msg.content }],
   }));
 
-  // Tool results go as a "user" message with functionResponse parts.
   if (toolResults && toolResults.length > 0) {
     const parts: Part[] = toolResults.map((tr) => ({
       functionResponse: {
+        /** Reverse the synthetic ID to recover the original tool name. */
         name: tr.toolCallId.replace(/^gemini_/, "").replace(/_\d+$/, ""),
         response: { content: tr.result },
       },
@@ -122,11 +144,9 @@ function buildGeminiContents(messages: ChatMessage[], toolResults?: ToolResult[]
  *
  * Gemini requires { type: SchemaType.OBJECT, properties: {...} } at minimum.
  * MCP schemas may include keywords Gemini doesn't support ("default",
- * "$schema", "additionalProperties"), so we strip those recursively.
- *
- * SDK boundary: MCP JSON Schema is Record<string, unknown> at the TS level,
- * while Gemini expects its own typed Schema hierarchy. The runtime shapes
- * are compatible (both are JSON Schema), so this cast is safe.
+ * "$schema", "additionalProperties"), so we strip those recursively via
+ * stripUnsupportedKeys(). Without this cleaning, the Gemini API returns
+ * opaque 400 errors.
  */
 function toGeminiFunctionSchema(schema: Record<string, unknown>): FunctionDeclarationSchema {
   const properties = schema["properties"];
@@ -142,8 +162,6 @@ function toGeminiFunctionSchema(schema: Record<string, unknown>): FunctionDeclar
     }
   }
 
-  // The cast here is intentional: we've built a conformant object but
-  // TypeScript can't verify the recursive Schema shape statically.
   return {
     type: SchemaType.OBJECT,
     properties: cleanedProperties,
@@ -151,10 +169,15 @@ function toGeminiFunctionSchema(schema: Record<string, unknown>): FunctionDeclar
 }
 
 /**
- * Recursively removes JSON Schema keywords that Gemini doesn't support.
+ * JSON Schema keywords that Gemini's FunctionDeclaration API does not
+ * accept. If new keywords cause issues, add them here.
  */
 const UNSUPPORTED_KEYS = new Set(["default", "$schema", "additionalProperties"]);
 
+/**
+ * Recursively removes unsupported JSON Schema keywords from a property
+ * definition object, preserving all other fields.
+ */
 function stripUnsupportedKeys(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 

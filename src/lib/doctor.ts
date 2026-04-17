@@ -7,6 +7,9 @@
  * identify configuration issues before they become runtime errors. Each
  * check runs independently — a failure in one doesn't block the others.
  *
+ * This script runs outside of Next.js (via tsx), so it manually loads
+ * .env files rather than relying on Next.js's built-in env loading.
+ *
  * Exit code 0 = all checks passed, 1 = at least one failed.
  */
 
@@ -28,7 +31,7 @@ let passed = 0;
 let failed = 0;
 
 /**
- * Reports a check result and updates the counters.
+ * Reports a check result to the console and updates pass/fail counters.
  */
 function report(ok: boolean, message: string) {
   if (ok) {
@@ -42,7 +45,9 @@ function report(ok: boolean, message: string) {
 
 /**
  * Loads env files the same way Next.js does: .env first, then .env.local
- * overrides. Reuses parseEnvFile from env-flavors.ts.
+ * overrides. Starts from process.env so any shell-exported vars are
+ * included too. Reuses parseEnvFile from env-flavors.ts to avoid
+ * duplicating the .env parser.
  */
 function loadEnvFiles(): Record<string, string> {
   const env: Record<string, string> = Object.fromEntries(
@@ -58,6 +63,10 @@ function loadEnvFiles(): Record<string, string> {
   return env;
 }
 
+/**
+ * Main diagnostic flow: static checks first (files exist, Zod validates),
+ * then runtime checks (MCP server reachable, API keys accepted).
+ */
 async function main() {
   console.log("\nPocket CEP Environment Check\n");
 
@@ -114,6 +123,10 @@ async function main() {
       );
     }
 
+    /**
+     * Dynamic import because mcp-client brings in the MCP SDK, which
+     * is heavy. We only need it if the MCP server is actually reachable.
+     */
     try {
       const { listMcpTools } = await import("./mcp-client");
       const tools = await listMcpTools(mcpUrl);

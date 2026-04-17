@@ -4,6 +4,23 @@
  * Pre-loads all managed Chrome users from /api/users (profiles + activity).
  * Users with recent activity appear first. Typing filters the list by email.
  * You can also type any email manually for users not in the list.
+ *
+ * Auto-selects the first user on initial load so the chat panel is
+ * immediately ready. This avoids a "select a user first" dead state
+ * that confused testers in early prototypes.
+ *
+ * The combobox follows WAI-ARIA combobox patterns: role="combobox" on
+ * the input, role="listbox" on the dropdown, aria-expanded, and
+ * aria-autocomplete="list". Keyboard navigation supports Enter (select
+ * first match or typed email) and Escape (close dropdown).
+ *
+ * The blur handler uses a 200ms setTimeout to let click events on
+ * list items fire before the dropdown closes. This is a common pattern
+ * for comboboxes without a portal-based dropdown.
+ *
+ * This component renders in two places on the dashboard (sidebar +
+ * mobile header) but they share lifted state via props, so selecting
+ * a user in either location updates both.
  */
 
 "use client";
@@ -17,6 +34,11 @@ type UserSelectorProps = {
   onUserChange: (email: string) => void;
 };
 
+/**
+ * Autocomplete combobox for picking a Chrome user to investigate.
+ * Fetches the user list from /api/users on mount and auto-selects
+ * the most active user.
+ */
 export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) {
   const [users, setUsers] = useState<UserEntry[]>([]);
   const [loading, setLoading] = useState(true);

@@ -36,7 +36,9 @@ import {
 const isLive = process.argv.includes("--live");
 
 /**
- * Runs all static checks for a single flavor and returns the results.
+ * Runs all static checks for a single flavor. "Static" means no network
+ * calls — just file existence, Zod parsing, and consistency checks between
+ * the flavor's filename convention and its actual content.
  */
 function checkFlavor(name: FlavorName): CheckResult[] {
   const results: CheckResult[] = [];
@@ -64,7 +66,11 @@ function checkFlavor(name: FlavorName): CheckResult[] {
 
   const data = parseResult.data;
 
-  // Verify the flavor name matches its content.
+  /**
+   * Cross-check: the flavor filename encodes the expected provider and
+   * auth mode (e.g. "gemini-oauth"). If the file's actual AUTH_MODE or
+   * LLM_PROVIDER doesn't match, it's likely a copy-paste error.
+   */
   const expectsClaude = name.startsWith("claude");
   const expectsGemini = name.startsWith("gemini");
   const expectsSa = name.endsWith("-sa");
@@ -92,7 +98,6 @@ function checkFlavor(name: FlavorName): CheckResult[] {
     results.push({ ok: true, message: `AUTH_MODE: ${data.AUTH_MODE}` });
   }
 
-  // Check the correct API key is present.
   if (data.LLM_PROVIDER === "claude") {
     const hasKey = Boolean(data.ANTHROPIC_API_KEY);
     results.push({
@@ -107,7 +112,6 @@ function checkFlavor(name: FlavorName): CheckResult[] {
     });
   }
 
-  // Check that the "wrong" API key is NOT set (clean separation).
   if (data.LLM_PROVIDER === "claude" && data.GOOGLE_AI_API_KEY) {
     results.push({ ok: true, message: "Note: GOOGLE_AI_API_KEY also set (unused but harmless)" });
   }
@@ -115,7 +119,6 @@ function checkFlavor(name: FlavorName): CheckResult[] {
     results.push({ ok: true, message: "Note: ANTHROPIC_API_KEY also set (unused but harmless)" });
   }
 
-  // MCP URL is parseable.
   try {
     new URL(data.MCP_SERVER_URL);
     results.push({ ok: true, message: `MCP_SERVER_URL: ${data.MCP_SERVER_URL}` });
@@ -126,7 +129,6 @@ function checkFlavor(name: FlavorName): CheckResult[] {
     });
   }
 
-  // Placeholder check.
   if (data.BETTER_AUTH_SECRET === "please-change-me-to-a-real-secret") {
     results.push({ ok: false, message: "BETTER_AUTH_SECRET is still the default placeholder" });
   } else {
@@ -138,7 +140,8 @@ function checkFlavor(name: FlavorName): CheckResult[] {
 
 /**
  * Runs live runtime checks for a flavor (MCP connectivity, LLM key validity).
- * Only called when --live is passed.
+ * Only called when --live is passed. Reuses the probe functions from
+ * doctor-checks.ts so the validation logic stays in one place.
  */
 async function liveCheckFlavor(name: FlavorName): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
@@ -161,6 +164,7 @@ async function liveCheckFlavor(name: FlavorName): Promise<CheckResult[]> {
   return results;
 }
 
+/** Entry point — iterates all flavors and reports results. */
 async function main() {
   console.log(`\nPocket CEP Flavor Diagnostics${isLive ? " (live mode)" : ""}\n`);
 

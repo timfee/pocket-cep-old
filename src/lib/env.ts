@@ -4,10 +4,20 @@
  * Uses discriminated unions to enforce that each auth mode and LLM
  * provider has its required credentials. Invalid combinations are
  * caught at startup with clear error messages.
+ *
+ * The two independent axes — AUTH_MODE and LLM_PROVIDER — form a 2x2 matrix
+ * of valid configurations. Zod's discriminatedUnion on each axis means
+ * you get targeted error messages ("ANTHROPIC_API_KEY is required when
+ * LLM_PROVIDER is claude") instead of a generic "missing field" error.
  */
 
 import { z } from "zod";
 
+/**
+ * Regex-validated Google OAuth client ID. The strict format check catches
+ * common copy-paste mistakes (e.g. trailing whitespace, wrapped in quotes)
+ * before they surface as cryptic OAuth errors at runtime.
+ */
 const googleClientId = z
   .string()
   .min(1, "GOOGLE_CLIENT_ID is required in user_oauth mode.")
@@ -20,6 +30,10 @@ const googleClientSecret = z
   .string()
   .min(1, "GOOGLE_CLIENT_SECRET is required in user_oauth mode.");
 
+/**
+ * Fields shared by both auth modes. Extracted so the two discriminated
+ * union branches don't duplicate these definitions.
+ */
 const baseFields = {
   BETTER_AUTH_SECRET: z
     .string()
@@ -29,6 +43,10 @@ const baseFields = {
   LLM_MODEL: z.string().default(""),
 };
 
+/**
+ * In service_account mode, Google OAuth credentials are optional — the MCP
+ * server authenticates with its own ADC (Application Default Credentials).
+ */
 const serviceAccountAuth = z.object({
   ...baseFields,
   AUTH_MODE: z.literal("service_account"),
@@ -36,6 +54,11 @@ const serviceAccountAuth = z.object({
   GOOGLE_CLIENT_SECRET: z.string().default(""),
 });
 
+/**
+ * In user_oauth mode, the user signs in with Google and the app forwards
+ * their access token to the MCP server as a Bearer header. Both client ID
+ * and secret are required for the OAuth consent flow.
+ */
 const userOAuthAuth = z.object({
   ...baseFields,
   AUTH_MODE: z.literal("user_oauth"),
@@ -70,13 +93,19 @@ const geminiProvider = z.object({
 const llmSchema = z.discriminatedUnion("LLM_PROVIDER", [claudeProvider, geminiProvider]);
 
 /**
- * Full server schema. Applies defaults for AUTH_MODE and LLM_PROVIDER before
- * parsing so the discriminated unions can match on the discriminant field.
+ * Zod's discriminatedUnion requires the discriminant field to exist in the
+ * input. Since .env files omit optional keys, we use preprocess to inject
+ * defaults before the union attempts to match on the discriminant.
  */
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
+/**
+ * Combined server schema: auth axis AND llm axis. The `.and()` intersection
+ * merges both discriminated unions into a single flat type, so `getEnv()`
+ * returns one object with all fields from both axes.
+ */
 export const serverSchema = z.preprocess((raw) => {
   if (!isRecord(raw)) return raw;
   return {
@@ -88,8 +117,15 @@ export const serverSchema = z.preprocess((raw) => {
 
 export type ServerEnv = z.infer<typeof serverSchema>;
 
+/** Module-level cache — env is validated once per process, not per request. */
 let _env: ServerEnv | null = null;
 
+/**
+ * Returns the validated server environment, parsing on first call.
+ * Throws a developer-friendly error listing every invalid field at once
+ * (rather than failing on the first one), so you can fix all issues in
+ * a single pass.
+ */
 export function getEnv(): ServerEnv {
   if (_env) return _env;
 
@@ -110,6 +146,12 @@ export function getEnv(): ServerEnv {
   return _env;
 }
 
+/**
+ * Lazy proxy that defers environment parsing until a property is actually
+ * accessed. This allows importing `env` at module scope without triggering
+ * validation during Next.js compilation (where process.env isn't fully
+ * populated yet).
+ */
 export const env = new Proxy({} as ServerEnv, {
   get(_target, prop: string) {
     return getEnv()[prop as keyof ServerEnv];

@@ -3,10 +3,23 @@
  *
  * Shows a compact sign-in card following Google's sign-in page patterns:
  * centered card, logo, title, description, and the branded sign-in button.
+ *
+ * This page is only visible in user_oauth mode. In service_account mode,
+ * the middleware (src/proxy.ts) redirects "/" straight to /dashboard and
+ * auto-creates a session, so users never see this page.
+ *
+ * The page is a React Server Component (no "use client") because it has
+ * no interactive state -- the only interactive element (SignInButton) is
+ * a separate client component imported below.
  */
 
 import { SignInButton } from "@/components/sign-in-button";
 
+/**
+ * Static landing page with a Google-style centered sign-in card.
+ * Deliberately simple: no data fetching, no session check. The
+ * middleware handles redirect logic before this component renders.
+ */
 export default function LandingPage() {
   return (
     <div className="bg-surface-dim flex flex-1 items-center justify-center px-4">

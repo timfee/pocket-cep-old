@@ -7,12 +7,15 @@
  *
  * Extension point: to add a new LLM provider (e.g. Mistral, Llama), create
  * a new adapter file that implements LlmAdapter and register it in the
- * factory function in agent-loop.ts.
+ * createAdapter() factory function in agent-loop.ts.
  */
 
 /**
  * A tool definition in the format that both LLM adapters can consume.
- * Converted from MCP tool schemas before being passed to the LLM.
+ * These are converted from MCP tool schemas (which use JSON Schema) before
+ * being passed to each provider's API — each adapter handles the final
+ * translation to its provider-specific format (e.g. Anthropic's input_schema
+ * vs Gemini's functionDeclarations).
  */
 export type LlmTool = {
   name: string;
@@ -21,8 +24,9 @@ export type LlmTool = {
 };
 
 /**
- * A message in the conversation history. Matches the common subset
- * of what both Anthropic and Google APIs expect.
+ * A message in the conversation history. Uses the common subset of roles
+ * supported by both Anthropic ("user"/"assistant") and Google ("user"/"model").
+ * Each adapter maps "assistant" to whatever role name its API expects.
  */
 export type ChatMessage = {
   role: "user" | "assistant";
@@ -32,6 +36,10 @@ export type ChatMessage = {
 /**
  * Events yielded by the LLM adapter during streaming. The agent loop
  * consumes these to build SSE events for the frontend.
+ *
+ * The "finish" event's stopReason drives the loop: "tool_use" means the
+ * LLM wants to call tools (loop continues), "end_turn" means it's done
+ * (loop exits).
  */
 export type LlmEvent =
   | { type: "text"; text: string }
@@ -40,7 +48,8 @@ export type LlmEvent =
 
 /**
  * The result of a tool call, fed back to the LLM so it can continue
- * reasoning with the tool's output.
+ * reasoning with the tool's output. The result is always stringified JSON
+ * because both Anthropic and Gemini expect string content for tool results.
  */
 export type ToolResult = {
   toolCallId: string;
@@ -51,6 +60,10 @@ export type ToolResult = {
 /**
  * The contract that every LLM adapter must implement. The agent loop
  * calls runTurn() for each iteration, streaming events as they arrive.
+ *
+ * Adapters are stateless — all conversation context is passed in via
+ * the params on each call. This simplifies the adapter implementations
+ * and makes them easy to test in isolation.
  */
 export type LlmAdapter = {
   /**

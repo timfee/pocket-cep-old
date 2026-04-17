@@ -1,11 +1,30 @@
 /**
  * @file Chat message bubble with optional tool call expansion.
+ *
+ * Each message renders as a single bubble. Assistant messages may also
+ * contain one or more collapsible ToolCallCards showing the MCP tool
+ * name, input JSON, and result JSON. This gives learners visibility
+ * into exactly what the agent asked the MCP server and what came back.
+ *
+ * The streaming indicator (pulsing dot) appears only on the last
+ * assistant message while `isStreaming` is true. It is purely cosmetic
+ * and does not affect layout.
+ *
+ * Extension point: to render Markdown in assistant messages, replace
+ * the `<div className="leading-5 ...">` with a Markdown renderer
+ * (e.g., react-markdown) and add prose styling.
  */
 
 "use client";
 
 import { useState } from "react";
 
+/**
+ * Display-oriented representation of a single tool call. Populated
+ * incrementally by the ChatPanel as SSE events arrive: first with
+ * name + input (from a `tool_call` event), then patched with result
+ * (from a `tool_result` event).
+ */
 export type ToolCallDisplay = {
   name: string;
   input: Record<string, unknown>;
@@ -20,6 +39,11 @@ type ChatMessageProps = {
   isStreaming?: boolean;
 };
 
+/**
+ * A single chat bubble. User messages are right-aligned with the
+ * primary color; assistant messages are left-aligned with a subtle
+ * ring border. Tool calls render above the text content.
+ */
 export function ChatMessage({ role, content, toolCalls, isStreaming }: ChatMessageProps) {
   const isUser = role === "user";
 
@@ -51,6 +75,11 @@ export function ChatMessage({ role, content, toolCalls, isStreaming }: ChatMessa
   );
 }
 
+/**
+ * Collapsible card showing a single MCP tool invocation. Collapsed by
+ * default to keep the chat readable; expands to show raw JSON input
+ * and result for educational inspection.
+ */
 function ToolCallCard({ toolCall }: { toolCall: ToolCallDisplay }) {
   const [expanded, setExpanded] = useState(false);
 

@@ -19,7 +19,9 @@ import { LOG_TAGS } from "./constants";
 
 /**
  * All available flavor names. Each corresponds to a .env.test.{name} file
- * in the project root. If you add a new flavor file, add its name here.
+ * in the project root. The naming convention encodes both axes:
+ * `{llm_provider}-{auth_mode}`. Adding a name here automatically includes
+ * it in doctor:flavors and the integration test matrix.
  */
 export const FLAVOR_NAMES = ["claude-sa", "claude-oauth", "gemini-sa", "gemini-oauth"] as const;
 
@@ -29,6 +31,9 @@ export type FlavorName = (typeof FLAVOR_NAMES)[number];
  * Parses a .env-style file into a key-value object. Handles comments,
  * blank lines, and simple KEY=VALUE syntax. Does not support multiline
  * values, variable expansion, or quoting (keep test flavors simple).
+ *
+ * This is intentionally simpler than dotenv — flavor files should stay
+ * trivial so the parsing is predictable in tests and diagnostics.
  */
 export function parseEnvFile(filePath: string): Record<string, string> {
   const content = readFileSync(filePath, "utf-8");
@@ -51,8 +56,8 @@ export function parseEnvFile(filePath: string): Record<string, string> {
 
 /**
  * Loads a named flavor's env vars from its .env.test.{name} file.
- * Throws if the file doesn't exist (indicates a missing flavor file,
- * not a user config error — this is a developer mistake).
+ * Throws if the file doesn't exist — this is a developer setup error,
+ * not a runtime condition, so failing fast is appropriate.
  */
 export function loadFlavor(name: FlavorName): Record<string, string> {
   const filePath = resolve(process.cwd(), `.env.test.${name}`);
@@ -69,8 +74,10 @@ export function loadFlavor(name: FlavorName): Record<string, string> {
 }
 
 /**
- * Loads all flavors and returns them as a map of name → env object.
- * Skips flavors whose files are missing (logs a warning instead of throwing).
+ * Loads all flavors and returns them as a map of name -> env object.
+ * Unlike loadFlavor(), this is lenient — it skips missing files with a
+ * warning. Used by diagnostic scripts that should report all available
+ * flavors without aborting on the first missing one.
  */
 export function loadAllFlavors(): Map<FlavorName, Record<string, string>> {
   const flavors = new Map<FlavorName, Record<string, string>>();

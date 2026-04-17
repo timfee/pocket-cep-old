@@ -1,17 +1,37 @@
 /**
- * @file Mode-aware route protection.
+ * @file Mode-aware route protection (Next.js middleware).
  *
- * service_account: no login needed. Sessionless requests are redirected to
- * /api/auth/auto-session which mints one automatically. "/" → /dashboard.
+ * This file is imported by the top-level middleware.ts and runs on
+ * every matched request before the page component renders.
  *
- * user_oauth: requires Google OAuth sign-in. Unauthenticated users go
- * to the landing page.
+ * service_account mode: no login needed. Sessionless requests are
+ * redirected to /api/auth/auto-session which mints a cookie
+ * automatically, then redirects to /dashboard. The landing page
+ * at "/" is never shown.
+ *
+ * user_oauth mode: requires Google OAuth sign-in. Unauthenticated
+ * users hitting /dashboard are redirected to "/" (landing page).
+ * Authenticated users hitting "/" are redirected to /dashboard.
+ *
+ * The session check uses `getSessionCookie` (a cookie-name lookup)
+ * rather than a full `getSession` API call. This keeps the middleware
+ * fast since it runs on every matched request. The trade-off is that
+ * an expired or invalid cookie will pass the middleware but fail at
+ * the API layer, which returns 401 and the frontend handles it.
+ *
+ * The `config.matcher` limits this to "/" and "/dashboard/*" so API
+ * routes, static assets, and _next/ paths are never intercepted.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 import { getEnv } from "@/lib/env";
 
+/**
+ * Route-protection middleware. Redirects users based on auth mode and
+ * session state. Returns NextResponse.next() to allow the request
+ * through when no redirect is needed.
+ */
 export async function proxy(request: NextRequest) {
   const { AUTH_MODE } = getEnv();
   const sessionCookie = getSessionCookie(request);
@@ -38,6 +58,11 @@ export async function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
+/**
+ * Next.js middleware matcher. Only intercepts the landing page and
+ * dashboard routes -- API routes and static files are excluded so they
+ * are not slowed down by the middleware.
+ */
 export const config = {
   matcher: ["/", "/dashboard/:path*"],
 };

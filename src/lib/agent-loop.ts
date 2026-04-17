@@ -13,6 +13,10 @@
  *
  * Every step emits SSE events so the frontend can display both the
  * conversation and the raw MCP protocol traffic (educational inspector).
+ *
+ * The loop is provider-agnostic — it programs against the LlmAdapter
+ * interface (see llm/types.ts), so adding a new LLM provider doesn't
+ * require changes here.
  */
 
 import { callMcpTool, listMcpTools } from "./mcp-client";
@@ -24,8 +28,11 @@ import { getErrorMessage } from "./errors";
 import type { LlmAdapter, LlmTool, ChatMessage, ToolResult } from "./llm/types";
 
 /**
- * SSE events sent from the agent loop to the frontend. These are JSON
- * objects written to the stream, one per line, prefixed with "data: ".
+ * SSE events sent from the agent loop to the frontend. Each event type
+ * drives a different part of the UI:
+ *   - text/tool_call/tool_result: the chat conversation panel
+ *   - mcp_request/mcp_response: the educational protocol inspector
+ *   - error/done: control flow signals
  */
 export type AgentEvent =
   | { type: "text"; text: string }
@@ -53,7 +60,10 @@ export function resetToolCache() {
 }
 
 /**
- * Creates the appropriate LLM adapter based on the LLM_PROVIDER env var.
+ * Factory that selects the LLM adapter based on LLM_PROVIDER.
+ *
+ * Extension point: to add a new LLM provider, create an adapter in
+ * src/lib/llm/ that implements LlmAdapter, then add a case here.
  */
 function createAdapter(): LlmAdapter {
   const config = getEnv();
@@ -83,9 +93,12 @@ export async function* runAgentLoop(
   const config = getEnv();
   const adapter = createAdapter();
 
-  // Tool list is cached for 60s in service_account mode to avoid a full
-  // MCP round-trip on every chat message. In user_oauth mode we skip the
-  // cache because the access token is per-user.
+  /**
+   * Tool list is cached for 60s in service_account mode to avoid a full
+   * MCP round-trip on every chat message. In user_oauth mode we skip the
+   * cache because the access token is per-user and tool availability
+   * could theoretically differ by user permissions.
+   */
   let mcpTools: LlmTool[];
   try {
     if (!accessToken && toolCache && Date.now() < toolCache.expiresAt) {
@@ -114,10 +127,15 @@ export async function* runAgentLoop(
   const messages: ChatMessage[] = [...conversationHistory, { role: "user", content: userMessage }];
   let toolResults: ToolResult[] | undefined;
 
+  /**
+   * The main loop: each iteration is one LLM turn. The LLM either
+   * produces a final text response (end_turn) or requests tool calls
+   * (tool_use). We execute the tools, feed results back, and loop.
+   * MAX_AGENT_ITERATIONS prevents runaway loops.
+   */
   for (let iteration = 0; iteration < MAX_AGENT_ITERATIONS; iteration++) {
     console.log(LOG_TAGS.CHAT, `Agent iteration ${iteration + 1}`);
 
-    // Collect tool calls from this turn so we can execute them after.
     const pendingToolCalls: Array<{
       id: string;
       name: string;
@@ -126,7 +144,6 @@ export async function* runAgentLoop(
 
     let stopReason: "end_turn" | "tool_use" = "end_turn";
 
-    // Stream one turn of LLM output.
     for await (const event of adapter.runTurn({
       systemPrompt,
       messages,
@@ -156,24 +173,21 @@ export async function* runAgentLoop(
       return;
     }
 
+    /**
+     * Execute each tool call sequentially. Parallel execution would be
+     * possible but sequential is easier to follow in the inspector panel
+     * and avoids concurrent request limits on the MCP server.
+     */
     toolResults = [];
 
     for (const tc of pendingToolCalls) {
-      // Emit the raw MCP request for the inspector panel.
-      const rawReq = {
-        jsonrpc: "2.0",
-        method: "tools/call",
-        params: { name: tc.name, arguments: tc.input },
-      };
-      yield { type: "mcp_request", payload: rawReq };
+      yield { type: "mcp_request", payload: rawReqPayload(tc.name, tc.input) };
 
       try {
         const mcpResult = await callMcpTool(config.MCP_SERVER_URL, tc.name, tc.input, accessToken);
 
-        // Emit the raw MCP response for the inspector panel.
         yield { type: "mcp_response", payload: mcpResult.rawResponse };
 
-        // Emit a human-readable tool result for the chat UI.
         yield {
           type: "tool_result",
           name: tc.name,
@@ -196,6 +210,10 @@ export async function* runAgentLoop(
           isError: true,
         };
 
+        /**
+         * Error results are still fed back to the LLM so it can
+         * explain the failure to the user or try an alternative approach.
+         */
         toolResults.push({
           toolCallId: tc.id,
           result: JSON.stringify({ error: errorMessage }),
@@ -205,8 +223,16 @@ export async function* runAgentLoop(
     }
   }
 
-  // Safety cap reached
   console.warn(LOG_TAGS.CHAT, "Agent loop hit max iterations");
   yield { type: "text", text: "\n\n(Reached maximum tool call iterations)" };
   yield { type: "done" };
+}
+
+/** Builds a JSON-RPC-style request payload for the inspector panel. */
+function rawReqPayload(name: string, args: Record<string, unknown>): Record<string, unknown> {
+  return {
+    jsonrpc: "2.0",
+    method: "tools/call",
+    params: { name, arguments: args },
+  };
 }

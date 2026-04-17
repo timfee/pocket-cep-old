@@ -1,16 +1,22 @@
 /**
  * @file App-wide constants for Pocket CEP.
+ *
+ * Centralizes magic strings and configuration values so they can be
+ * referenced consistently across server code, client components, and
+ * diagnostic scripts.
  */
 
 /**
  * Email domain for anonymous sessions in service_account mode.
- * Matched in the app bar to show "Service Account" instead of the
- * generated email address.
+ * BetterAuth's anonymous plugin generates emails like `anon-xyz@{domain}`.
+ * The UI checks for this domain to display "Service Account" instead
+ * of the generated email address.
  */
 export const SA_EMAIL_DOMAIN = "service-account.local";
 
 /**
- * Structured log prefixes for each subsystem.
+ * Structured log prefixes for each subsystem. These make it easy to
+ * filter server logs by component (e.g. `grep "\[mcp\]"`).
  */
 export const LOG_TAGS = {
   MCP: "[mcp]",
@@ -21,7 +27,8 @@ export const LOG_TAGS = {
 } as const;
 
 /**
- * Default model IDs used when LLM_MODEL is not set.
+ * Default model IDs used when LLM_MODEL is not set. Update these when
+ * newer model versions are released and tested.
  */
 export const DEFAULT_MODELS = {
   claude: "claude-sonnet-4-20250514",
@@ -30,13 +37,16 @@ export const DEFAULT_MODELS = {
 
 /**
  * Prevents runaway tool-calling loops where the LLM keeps requesting
- * tools without producing a final answer.
+ * tools without producing a final answer. 10 iterations allows complex
+ * multi-step investigations while bounding cost and latency.
  */
 export const MAX_AGENT_ITERATIONS = 10;
 
 /**
- * Human-readable names for Chrome activity event types.
- * Matches EVENT_NAME_MAPPING from the upstream MCP server.
+ * Human-readable names for Chrome activity event types. Used by the
+ * frontend to render event badges. The keys are the raw event type
+ * strings returned by the Chrome Enterprise audit log API (and surfaced
+ * through the MCP server's activity tools).
  */
 export const EVENT_DISPLAY_NAMES: Record<string, string> = {
   browserCrashEvent: "Browser crash",
@@ -52,6 +62,11 @@ export const EVENT_DISPLAY_NAMES: Record<string, string> = {
   suspiciousUrlEvent: "Suspicious URL",
 } as const;
 
+/**
+ * Builds the system prompt injected into every LLM conversation. The
+ * selectedUserEmail is interpolated so the LLM knows which user the
+ * admin is investigating and can scope its MCP tool calls accordingly.
+ */
 export function buildSystemPrompt(selectedUserEmail: string): string {
   return `You are a Chrome Enterprise Premium admin assistant called "Pocket CEP."
 

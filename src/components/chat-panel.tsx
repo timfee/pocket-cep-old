@@ -5,6 +5,23 @@
  * connects to the /api/chat SSE endpoint, and renders the message list
  * with streaming support. The chat panel consumes SSE events from the
  * agent loop and dispatches them to the message list and inspector panel.
+ *
+ * SSE event flow:
+ *   1. User types a message -> ChatInput calls handleSend
+ *   2. handleSend POSTs to /api/chat with message + history
+ *   3. The server streams back AgentEvent objects as SSE lines
+ *   4. This component reads the stream via ReadableStream.getReader()
+ *   5. Each event type updates local state differently:
+ *      - "text"        -> appends to assistant message content
+ *      - "tool_call"   -> adds a new ToolCallDisplay entry
+ *      - "tool_result" -> patches the matching ToolCallDisplay with result
+ *      - "mcp_request" / "mcp_response" -> forwarded to InspectorPanel via prop
+ *      - "error"       -> appends error text to the message
+ *      - "done"        -> implicit (stream ends)
+ *
+ * The SSE parsing uses a manual buffer + split approach rather than
+ * EventSource because EventSource does not support POST requests or
+ * custom headers (needed for auth cookies).
  */
 
 "use client";
@@ -16,8 +33,10 @@ import { getErrorMessage } from "@/lib/errors";
 import type { AgentEvent } from "@/lib/agent-loop";
 
 /**
- * A message in the local conversation state, including any tool calls
- * that were made during the assistant's response.
+ * A message in the local conversation state. Extends the server-side
+ * ChatMessage with optional toolCalls for display purposes. Tool calls
+ * are tracked here (not sent back to the server) so the UI can show
+ * expandable cards inside assistant bubbles.
  */
 type ConversationMessage = {
   role: "user" | "assistant";
@@ -62,9 +81,13 @@ export function ChatPanel({ selectedUser, onProtocolEvent }: ChatPanelProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Refs for values read inside handleSend — keeps them out of the
-  // useCallback dep array so the callback isn't recreated on every
-  // streaming state update.
+  /**
+   * Refs mirror the latest state values so handleSend can read them
+   * without being in useCallback's dependency array. Without this,
+   * every streamed text chunk would recreate the callback (since
+   * `messages` changes), causing the ChatInput to re-render and lose
+   * focus mid-stream.
+   */
   const messagesRef = useRef(messages);
   useEffect(() => {
     messagesRef.current = messages;

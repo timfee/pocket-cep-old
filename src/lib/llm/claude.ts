@@ -8,6 +8,11 @@
  *   - messages.create with stream: true for real-time output
  *   - tool_use content blocks for function calling
  *   - tool_result messages to feed tool output back to the model
+ *
+ * Anthropic's streaming protocol sends content in "blocks" — each block
+ * has a start event, zero or more delta events, and a stop event. Tool
+ * calls arrive as tool_use blocks whose input is streamed as partial JSON
+ * fragments that must be accumulated before parsing.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -16,7 +21,8 @@ import type { LlmAdapter, LlmEvent, ChatMessage, ToolResult } from "./types";
 
 /**
  * Creates a Claude adapter instance configured with the given API key
- * and optional model override.
+ * and optional model override. The returned adapter is stateless — it
+ * creates a new streaming request on each runTurn() call.
  */
 export function createClaudeAdapter(apiKey: string, model?: string): LlmAdapter {
   const anthropic = new Anthropic({ apiKey });
@@ -26,13 +32,14 @@ export function createClaudeAdapter(apiKey: string, model?: string): LlmAdapter 
     async *runTurn({ systemPrompt, messages, tools, toolResults }) {
       const anthropicMessages = buildAnthropicMessages(messages, toolResults);
 
-      // Convert our generic tool definitions into Anthropic's format.
-      // Anthropic uses "input_schema" (JSON Schema), which matches MCP directly.
+      /**
+       * MCP and Anthropic both use JSON Schema for tool input definitions,
+       * so the runtime shapes are identical. The TypeScript types don't
+       * overlap, though, so this cast bridges the SDK boundary.
+       */
       const anthropicTools: Anthropic.Tool[] = tools.map((tool) => ({
         name: tool.name,
         description: tool.description,
-        // SDK boundary: MCP and Anthropic both use JSON Schema at runtime,
-        // but their TS types don't overlap. This cast is unavoidable.
         input_schema: tool.inputSchema as Anthropic.Tool.InputSchema,
       }));
 
@@ -41,7 +48,6 @@ export function createClaudeAdapter(apiKey: string, model?: string): LlmAdapter 
         `Claude turn: ${anthropicMessages.length} messages, ${anthropicTools.length} tools`,
       );
 
-      // Stream the response. The SDK yields events as the model generates output.
       const stream = anthropic.messages.stream({
         model: modelId,
         max_tokens: 4096,
@@ -50,15 +56,18 @@ export function createClaudeAdapter(apiKey: string, model?: string): LlmAdapter 
         tools: anthropicTools.length > 0 ? anthropicTools : undefined,
       });
 
+      /**
+       * Tool call inputs arrive as partial JSON fragments across multiple
+       * delta events. We accumulate them keyed by block index, then parse
+       * the complete JSON when the block stops.
+       */
       const pendingToolCalls = new Map<number, { id: string; name: string; inputJson: string }>();
 
       for await (const event of stream) {
-        // Text delta — a chunk of the model's text response.
         if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
           yield { type: "text", text: event.delta.text } satisfies LlmEvent;
         }
 
-        // Tool use block starts — the model is calling a tool.
         if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
           pendingToolCalls.set(event.index, {
             id: event.content_block.id,
@@ -67,7 +76,6 @@ export function createClaudeAdapter(apiKey: string, model?: string): LlmAdapter 
           });
         }
 
-        // Tool use input delta — accumulate the JSON input string.
         if (event.type === "content_block_delta" && event.delta.type === "input_json_delta") {
           const pending = pendingToolCalls.get(event.index);
           if (pending) {
@@ -75,7 +83,6 @@ export function createClaudeAdapter(apiKey: string, model?: string): LlmAdapter 
           }
         }
 
-        // Content block stop — if this was a tool_use block, yield the event.
         if (event.type === "content_block_stop") {
           const pending = pendingToolCalls.get(event.index);
           if (pending) {
@@ -95,7 +102,11 @@ export function createClaudeAdapter(apiKey: string, model?: string): LlmAdapter 
         }
       }
 
-      // Stop reason comes from the final message, not from streaming events.
+      /**
+       * The stop reason is only available on the final assembled message,
+       * not on individual streaming events. We await it after the stream
+       * completes to determine if the model wants to call tools.
+       */
       const finalMessage = await stream.finalMessage();
       const stopReason = finalMessage.stop_reason === "tool_use" ? "tool_use" : "end_turn";
 
@@ -106,8 +117,11 @@ export function createClaudeAdapter(apiKey: string, model?: string): LlmAdapter 
 
 /**
  * Converts our generic message format into Anthropic's specific format.
- * Handles the special case of tool results, which Anthropic expects as
- * a "user" message containing tool_result content blocks.
+ *
+ * Anthropic has a unique convention for tool results: they're sent as a
+ * "user" message containing an array of tool_result content blocks (not
+ * a separate role). Each block references its tool_use by ID so the
+ * model can correlate results with the calls it made.
  */
 function buildAnthropicMessages(
   messages: ChatMessage[],
@@ -118,8 +132,6 @@ function buildAnthropicMessages(
     content: msg.content,
   }));
 
-  // If we have tool results from the previous turn, append them.
-  // Anthropic expects tool results as a "user" message with tool_result blocks.
   if (toolResults && toolResults.length > 0) {
     result.push({
       role: "user",

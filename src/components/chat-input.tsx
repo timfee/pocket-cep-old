@@ -1,5 +1,14 @@
 /**
  * @file MD3-styled chat input bar with send button.
+ *
+ * Controlled input that calls `onSend` with trimmed text on Enter or
+ * button click. The input auto-focuses when `disabled` toggles off
+ * (i.e., after the assistant finishes streaming), so the user can
+ * immediately type a follow-up question without clicking.
+ *
+ * The send button uses a hidden touch-target expander (the invisible
+ * `<span>` overlay) to meet the 48px minimum tap target on mobile
+ * without inflating the visible button size.
  */
 
 "use client";
@@ -11,6 +20,10 @@ type ChatInputProps = {
   disabled?: boolean;
 };
 
+/**
+ * Chat input with a send button. Disables itself during streaming to
+ * prevent overlapping requests, and re-focuses after the stream ends.
+ */
 export function ChatInput({ onSend, disabled }: ChatInputProps) {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);

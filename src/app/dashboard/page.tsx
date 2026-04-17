@@ -4,6 +4,20 @@
  * Three-panel layout: sidebar (user selection), center (chat), right
  * (MCP inspector). Sidebar collapses on mobile with the user selector
  * repositioned above the chat.
+ *
+ * Data flow:
+ *   DashboardPage (state owner)
+ *     -> selectedUser flows down to UserSelector + ChatPanel
+ *     -> protocolEvents flows down to InspectorPanel
+ *     -> ChatPanel calls onProtocolEvent to push MCP traffic upward
+ *
+ * State is lifted to this page because the inspector and chat panels
+ * are siblings that both need access to protocol events. The user
+ * selector appears in two DOM locations (sidebar on desktop, inline
+ * on mobile) but shares the same lifted state via props.
+ *
+ * Extension point: to add a tools catalog panel, add another aside
+ * and feed it the MCP tool list from a new shared state variable.
  */
 
 "use client";
@@ -15,11 +29,17 @@ import { ChatPanel } from "@/components/chat-panel";
 import { InspectorPanel } from "@/components/inspector-panel";
 import type { AgentEvent } from "@/lib/agent-loop";
 
+/**
+ * Top-level authenticated page. Owns all cross-panel state (selected
+ * user, protocol events, inspector visibility) and distributes it via
+ * props rather than context to keep the dependency graph explicit.
+ */
 export default function DashboardPage() {
   const [selectedUser, setSelectedUser] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [protocolEvents, setProtocolEvents] = useState<AgentEvent[]>([]);
 
+  /** Appends an event to the inspector log. Stable ref via useCallback. */
   const handleProtocolEvent = useCallback((event: AgentEvent) => {
     setProtocolEvents((prev) => [...prev, event]);
   }, []);

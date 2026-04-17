@@ -21,6 +21,10 @@ import { getErrorMessage } from "./errors";
 /**
  * Result from an MCP tool call, containing both the structured content
  * and the raw JSON-RPC request/response for the inspector panel.
+ *
+ * The raw fields are reconstructed approximations of the JSON-RPC wire
+ * format — the SDK doesn't expose the literal bytes. They're accurate
+ * enough for the educational inspector panel.
  */
 export type McpToolResult = {
   content: unknown;
@@ -33,6 +37,7 @@ export type McpToolResult = {
 
 /**
  * An MCP tool definition as returned by the server's listTools endpoint.
+ * The inputSchema is a JSON Schema object describing the tool's parameters.
  */
 export type McpToolDefinition = {
   name: string;
@@ -43,6 +48,10 @@ export type McpToolDefinition = {
 /**
  * Creates a connected MCP client pointed at the given server URL.
  * Injects the Bearer token if provided (user_oauth mode).
+ *
+ * The connect/close-per-call pattern is intentional: the upstream CEP MCP
+ * server is configured stateless (no session ID), so there's no benefit
+ * to keeping connections open and it avoids stale-connection bugs.
  */
 async function connect(
   serverUrl: string,
@@ -66,6 +75,11 @@ async function connect(
     await transport.close().catch(() => {});
     const msg = getErrorMessage(error);
 
+    /**
+     * Translate low-level network errors into actionable messages.
+     * ECONNREFUSED is the most common first-run issue — the developer
+     * forgot to start the MCP server alongside the Next.js dev server.
+     */
     if (msg.includes("fetch failed") || msg.includes("ECONNREFUSED")) {
       throw new Error(
         `Cannot connect to MCP server at ${serverUrl}. ` +
@@ -93,6 +107,11 @@ export async function callMcpTool(
   args: Record<string, unknown>,
   accessToken?: string,
 ): Promise<McpToolResult> {
+  /**
+   * We construct the raw request object before calling the SDK so we can
+   * return it for the inspector panel. This mirrors what the SDK sends
+   * on the wire (JSON-RPC 2.0 tools/call method).
+   */
   const rawRequest = {
     jsonrpc: "2.0",
     method: "tools/call",
@@ -131,6 +150,10 @@ export async function callMcpTool(
 /**
  * Lists all tools available on the MCP server. Used to populate the
  * LLM's tool definitions and the educational tools catalog.
+ *
+ * The result is cached in agent-loop.ts (not here) because caching
+ * policy depends on auth mode — SA mode can cache globally, but
+ * user_oauth mode needs per-user freshness.
  */
 export async function listMcpTools(
   serverUrl: string,

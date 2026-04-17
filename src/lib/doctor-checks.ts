@@ -2,30 +2,38 @@
  * @file Shared diagnostic check functions used by both doctor.ts and
  * doctor-flavors.ts. Keeps probe logic in one place so the fetch URLs,
  * headers, and validity criteria don't drift between the two scripts.
+ *
+ * Each probe uses the lightest possible API call to verify credentials
+ * without burning tokens or triggering rate limits.
  */
 
 import { getErrorMessage } from "./errors";
 
 /**
- * Result of a single diagnostic check.
+ * Result of a single diagnostic check. Used by the doctor scripts to
+ * accumulate pass/fail counts and display colored output.
  */
 export type CheckResult = { ok: boolean; message: string };
 
+/** ANSI color codes for terminal output. */
 export const PASS = "\x1b[32m✓\x1b[0m";
 export const FAIL = "\x1b[31m✗\x1b[0m";
 export const WARN = "\x1b[33m!\x1b[0m";
 export const SKIP = "\x1b[90m○\x1b[0m";
 
 /**
- * Model used for the Anthropic API key probe. We use the cheapest model
- * to avoid burning tokens on a health check.
+ * Model used for the Anthropic API key probe. Haiku is the cheapest
+ * model — and with max_tokens: 1, the probe costs essentially nothing
+ * even if the key is valid and the request succeeds.
  */
 const ANTHROPIC_PROBE_MODEL = "claude-haiku-4-5-20251001";
 
 /**
  * Checks whether the MCP server is reachable at the given URL.
- * A GET request to /mcp should return 405 (POST only) — that
- * confirms the server is up and listening.
+ *
+ * The MCP endpoint only accepts POST (JSON-RPC), so a GET returns 405.
+ * Both 200 and 405 confirm the server is up — anything else (or a
+ * network error) means it's unreachable.
  */
 export async function probeMcpServer(serverUrl: string): Promise<CheckResult> {
   try {
@@ -46,9 +54,11 @@ export async function probeMcpServer(serverUrl: string): Promise<CheckResult> {
 }
 
 /**
- * Probes an Anthropic API key by sending a minimal request.
- * A 200 or 400/422 means the key is valid (bad request shape is fine).
- * Only 401/403 means the key is rejected.
+ * Probes an Anthropic API key by sending a minimal messages request.
+ *
+ * Any non-auth status (200, 400, 422, 429) means the key itself is valid.
+ * Only 401/403 means the key is rejected. This approach avoids needing
+ * a dedicated key-validation endpoint that doesn't exist in the API.
  */
 export async function probeAnthropicKey(apiKey: string): Promise<CheckResult> {
   try {
@@ -80,7 +90,9 @@ export async function probeAnthropicKey(apiKey: string): Promise<CheckResult> {
 
 /**
  * Probes a Google AI API key by listing available models.
- * A 200 means the key is valid.
+ *
+ * The models endpoint is read-only and free, making it ideal for
+ * key validation without side effects or token costs.
  */
 export async function probeGeminiKey(apiKey: string): Promise<CheckResult> {
   try {

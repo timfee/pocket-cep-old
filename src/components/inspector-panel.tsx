@@ -1,5 +1,21 @@
 /**
  * @file MCP Inspector panel showing raw JSON-RPC protocol traffic.
+ *
+ * The inspector is the educational heart of Pocket CEP. It shows the
+ * exact JSON-RPC 2.0 messages exchanged between the app and the MCP
+ * server, making the protocol tangible for learners.
+ *
+ * Events are pushed here from the DashboardPage via the
+ * `onProtocolEvent` callback. The panel filters for mcp_request and
+ * mcp_response events (ignoring text, tool_call, etc.) and renders
+ * them as collapsible cards with syntax-highlighted JSON.
+ *
+ * When closed, a floating pill button shows the event count so users
+ * know there is traffic to inspect. This avoids the panel taking up
+ * screen space by default while still surfacing activity.
+ *
+ * Extension point: to add request/response pairing (matching REQ #N
+ * with RES #N), add a correlation ID to AgentEvent in agent-loop.ts.
  */
 
 "use client";
@@ -13,6 +29,10 @@ type InspectorPanelProps = {
   onToggle: () => void;
 };
 
+/**
+ * Collapsible sidebar showing raw MCP protocol traffic. Renders as a
+ * floating pill button when closed, and a full sidebar when open.
+ */
 export function InspectorPanel({ events, isOpen, onToggle }: InspectorPanelProps) {
   const protocolEvents = useMemo(
     () => events.filter((e) => e.type === "mcp_request" || e.type === "mcp_response"),
@@ -71,6 +91,11 @@ export function InspectorPanel({ events, isOpen, onToggle }: InspectorPanelProps
   );
 }
 
+/**
+ * A single protocol event rendered as a collapsible card. Shows the
+ * tool name (for requests) or "response" label, a REQ/RES badge, and
+ * the full JSON payload when expanded.
+ */
 function ProtocolEventCard({ event, index }: { event: AgentEvent; index: number }) {
   const [expanded, setExpanded] = useState(false);
   const isRequest = event.type === "mcp_request";

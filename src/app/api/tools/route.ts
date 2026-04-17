@@ -5,7 +5,17 @@
  * names, descriptions, and input schemas. Used by the educational tools
  * catalog and to show what the agent can do.
  *
- * GET /api/tools → { tools: McpToolDefinition[] }
+ * GET /api/tools -> { tools: McpToolDefinition[] }
+ *
+ * This endpoint makes a real MCP `tools/list` call to the upstream
+ * server, so the results always reflect the server's current
+ * capabilities. The response includes JSON Schema `inputSchema` for
+ * each tool, which the frontend could use to render dynamic forms or
+ * validation hints.
+ *
+ * Returns 502 if the MCP server is unreachable, giving the frontend a
+ * clear signal to show a connection-error state rather than an empty
+ * tool list.
  */
 
 import { NextResponse } from "next/server";
@@ -17,6 +27,10 @@ import { getEnv } from "@/lib/env";
 import { LOG_TAGS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 
+/**
+ * Lists all MCP tools available on the Chrome Enterprise Premium server.
+ * Requires an authenticated session; returns 401 otherwise.
+ */
 export async function GET() {
   const auth = getAuth();
   const session = await auth.api.getSession({ headers: await headers() });

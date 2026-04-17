@@ -2,13 +2,25 @@
  * @file API route to list managed Chrome users.
  *
  * Fetches from two MCP sources in parallel:
- *   1. list_customer_profiles — all managed browser profiles (the full user list)
- *   2. get_chrome_activity_log — recent events (annotates users with activity counts)
+ *   1. list_customer_profiles -- all managed browser profiles (the full user list)
+ *   2. get_chrome_activity_log -- recent events (annotates users with activity counts)
  *
  * This gives the frontend a complete list for autocomplete while highlighting
  * users with recent activity at the top.
  *
- * GET /api/users → { users: [{ email, eventCount, lastActive?, source }] }
+ * GET /api/users -> { users: [{ email, eventCount, lastActive?, source }] }
+ *
+ * Both MCP calls use Promise.allSettled so the endpoint still returns
+ * partial data if one source fails (e.g., if the activity log API is
+ * unavailable but profiles work). Only when both calls fail does the
+ * endpoint return a 502.
+ *
+ * The response is sorted by eventCount descending so the UserSelector
+ * combobox surfaces the most active (and therefore most interesting to
+ * investigate) users at the top.
+ *
+ * Extension point: to add more user metadata (e.g., license status),
+ * add another parallel MCP call and merge the results into UserEntry.
  */
 
 import { NextResponse } from "next/server";
@@ -20,6 +32,12 @@ import { getEnv } from "@/lib/env";
 import { LOG_TAGS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 
+/**
+ * A single user entry returned to the frontend. The `source` field
+ * indicates whether the user was discovered from a browser profile
+ * or from activity log events, which helps the UI decide how to
+ * render the entry (e.g., showing "no profile" badges).
+ */
 export type UserEntry = {
   email: string;
   eventCount: number;
@@ -27,6 +45,10 @@ export type UserEntry = {
   source: "profile" | "activity";
 };
 
+/**
+ * Fetches the combined user list from MCP profiles and activity logs.
+ * Requires an authenticated session; returns 401 otherwise.
+ */
 export async function GET() {
   const auth = getAuth();
   const session = await auth.api.getSession({ headers: await headers() });
@@ -95,7 +117,13 @@ export async function GET() {
 
 /**
  * Extracts unique emails and last activity time from MCP profile content.
- * The profiles response contains structured JSON with userEmail fields.
+ *
+ * The MCP server returns profiles as an array of `{ text: string }` objects.
+ * The text contains human-readable lines like "Email: user@example.com" as
+ * well as embedded JSON with `userEmail` and `lastActivityTime` fields.
+ * We parse both formats to maximize coverage -- the regex approach is
+ * intentionally lenient because the MCP server's output format is not
+ * formally specified and may vary between versions.
  */
 function extractProfileEmails(content: unknown, out: Map<string, { lastActive?: string }>): void {
   if (!Array.isArray(content)) return;
@@ -138,6 +166,10 @@ function extractProfileEmails(content: unknown, out: Map<string, { lastActive?: 
 
 /**
  * Extracts unique user emails and event counts from activity log content.
+ *
+ * Activity log entries contain "actor: user@example.com" in their text.
+ * Each occurrence increments that user's event count. Exported for use
+ * in tests.
  */
 export function extractActivityCounts(content: unknown, out: Map<string, number>): void {
   if (!Array.isArray(content)) return;
