@@ -80,15 +80,38 @@ export function ChatPanel({ selectedUser, onToolInvocation, onClearSelectedUser 
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/prompts")
-      .then((r) => (r.ok ? r.json() : { prompts: [] }))
-      .then((body: { prompts?: Prompt[] }) => {
+
+    /**
+     * Retry the prompts fetch a few times with backoff. `npm run dev:full`
+     * starts the Next.js app and the MCP server concurrently, so the
+     * first fetch can race the MCP server's boot and come back empty.
+     * Retrying until we get a non-empty list (or we run out of attempts)
+     * handles that startup window without blocking first paint.
+     */
+    const delaysMs = [0, 750, 1500, 3000];
+
+    async function loadPrompts() {
+      for (const delay of delaysMs) {
         if (cancelled) return;
-        setPrompts(body.prompts ?? []);
-      })
-      .catch(() => {
-        /* silent — prompts are optional */
-      });
+        if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+        try {
+          const res = await fetch("/api/prompts");
+          if (!res.ok) continue;
+          const body = (await res.json()) as { prompts?: Prompt[] };
+          const list = body.prompts ?? [];
+          if (cancelled) return;
+          if (list.length > 0) {
+            setPrompts(list);
+            return;
+          }
+        } catch {
+          // Network blip or dev-time HMR — try again on the next tick.
+        }
+      }
+    }
+
+    loadPrompts();
+
     return () => {
       cancelled = true;
     };
