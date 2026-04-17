@@ -1,45 +1,19 @@
 /**
- * @file MCP Inspector panel showing raw JSON-RPC protocol traffic.
- *
- * The inspector is the educational heart of Pocket CEP. It shows the
- * exact JSON-RPC 2.0 messages exchanged between the app and the MCP
- * server, making the protocol tangible for learners.
- *
- * Events are pushed here from the DashboardPage via the
- * `onProtocolEvent` callback. The panel filters for mcp_request and
- * mcp_response events (ignoring text, tool_call, etc.) and renders
- * them as collapsible cards with syntax-highlighted JSON.
- *
- * When closed, a floating pill button shows the event count so users
- * know there is traffic to inspect. This avoids the panel taking up
- * screen space by default while still surfacing activity.
- *
- * Extension point: to add request/response pairing (matching REQ #N
- * with RES #N), add a correlation ID to AgentEvent in agent-loop.ts.
+ * @file MCP Inspector panel showing tool invocations from the AI SDK.
  */
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { X } from "lucide-react";
-import type { AgentEvent } from "@/lib/agent-loop";
 
 type InspectorPanelProps = {
-  events: AgentEvent[];
+  invocations: unknown[];
   isOpen: boolean;
   onToggle: () => void;
 };
 
-/**
- * Collapsible sidebar showing raw MCP protocol traffic. Renders as a
- * floating pill button when closed, and a full sidebar when open.
- */
-export function InspectorPanel({ events, isOpen, onToggle }: InspectorPanelProps) {
-  const protocolEvents = useMemo(
-    () => events.filter((e) => e.type === "mcp_request" || e.type === "mcp_response"),
-    [events],
-  );
-
+export function InspectorPanel({ invocations, isOpen, onToggle }: InspectorPanelProps) {
   if (!isOpen) {
     return (
       <button
@@ -47,7 +21,7 @@ export function InspectorPanel({ events, isOpen, onToggle }: InspectorPanelProps
         onClick={onToggle}
         className="fixed top-14 right-3 z-10 rounded-[var(--radius-sm)] bg-zinc-900 px-2.5 py-1.5 text-[11px] text-zinc-300 shadow-[var(--shadow-elevation-2)] hover:bg-zinc-800"
       >
-        MCP Inspector ({protocolEvents.length})
+        MCP Inspector ({invocations.length})
       </button>
     );
   }
@@ -57,7 +31,7 @@ export function InspectorPanel({ events, isOpen, onToggle }: InspectorPanelProps
       <div className="flex items-center justify-between border-b border-zinc-700/50 px-3 py-2">
         <div>
           <h2 className="text-xs font-medium text-zinc-100">MCP Inspector</h2>
-          <p className="text-[10px] text-zinc-500">Raw JSON-RPC protocol traffic</p>
+          <p className="text-[10px] text-zinc-500">Tool invocations</p>
         </div>
         <button
           type="button"
@@ -74,14 +48,14 @@ export function InspectorPanel({ events, isOpen, onToggle }: InspectorPanelProps
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
-        {protocolEvents.length === 0 ? (
+        {invocations.length === 0 ? (
           <p className="text-center text-[11px] text-zinc-500">
-            Protocol events will appear here as the agent calls MCP tools.
+            Tool invocations will appear here as the agent calls MCP tools.
           </p>
         ) : (
           <div className="flex flex-col gap-1.5">
-            {protocolEvents.map((event, i) => (
-              <ProtocolEventCard key={i} event={event} index={i} />
+            {invocations.map((inv, i) => (
+              <InvocationCard key={i} invocation={inv} index={i} />
             ))}
           </div>
         )}
@@ -90,21 +64,19 @@ export function InspectorPanel({ events, isOpen, onToggle }: InspectorPanelProps
   );
 }
 
-/**
- * A single protocol event rendered as a collapsible card. Shows the
- * tool name (for requests) or "response" label, a REQ/RES badge, and
- * the full JSON payload when expanded.
- */
-function ProtocolEventCard({ event, index }: { event: AgentEvent; index: number }) {
+function InvocationCard({ invocation, index }: { invocation: unknown; index: number }) {
   const [expanded, setExpanded] = useState(false);
-  const isRequest = event.type === "mcp_request";
-  const payload = "payload" in event ? event.payload : {};
 
-  const params =
-    isRequest && typeof payload.params === "object" && payload.params !== null
-      ? (payload.params as Record<string, unknown>)
+  const inv =
+    invocation && typeof invocation === "object" && "toolInvocation" in invocation
+      ? (
+          invocation as {
+            toolInvocation: { toolName: string; args: unknown; result?: unknown; state: string };
+          }
+        ).toolInvocation
       : null;
-  const toolName = isRequest ? String(params?.name ?? "?") : "response";
+
+  if (!inv) return null;
 
   return (
     <div className="rounded-[var(--radius-xs)] border border-zinc-700/50 bg-zinc-800">
@@ -113,23 +85,14 @@ function ProtocolEventCard({ event, index }: { event: AgentEvent; index: number 
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left"
       >
-        <span
-          className={`rounded-[2px] px-1 py-0.5 font-mono text-[9px] font-semibold ${
-            isRequest ? "bg-primary/20 text-blue-300" : "bg-success/20 text-green-300"
-          }`}
-        >
-          {isRequest ? "REQ" : "RES"}
-        </span>
-        <span className="flex-1 truncate font-mono text-[11px] text-zinc-300">
-          {String(toolName)}
-        </span>
+        <span className="flex-1 truncate font-mono text-[11px] text-zinc-300">{inv.toolName}</span>
         <span className="font-mono text-[9px] text-zinc-600 tabular-nums">#{index + 1}</span>
       </button>
 
       {expanded && (
         <div className="border-t border-zinc-700/50 p-2">
           <pre className="overflow-x-auto font-mono text-[10px] leading-4 text-zinc-400">
-            {JSON.stringify(payload, null, 2)}
+            {JSON.stringify({ args: inv.args, result: inv.result, state: inv.state }, null, 2)}
           </pre>
         </div>
       )}

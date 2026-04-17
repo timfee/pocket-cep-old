@@ -22,9 +22,13 @@
     "check": "npm run typecheck && npm run lint && npm run test:unit && npm run test:integration"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.71",
+    "@ai-sdk/google": "^3.0.64",
+    "@ai-sdk/react": "^3.0.170",
     "@anthropic-ai/sdk": "^0.90.0",
     "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "ai": "^6.0.168",
     "better-auth": "^1.6.5",
     "clsx": "^2.1.1",
     "google-auth-library": "^10.6.2",
