@@ -30,13 +30,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files — .env (defaults) and *.example files are committed;
-# .env.local holds secrets and is gitignored.
-# .env.test.* are test flavor files with real credentials.
+# env files — .env (committed defaults) and .env.local.example are
+# tracked; .env.local holds secrets and is gitignored.
 .env.local
 .env.*.local
-.env.test.*
-!.env.test.*.example
 sa-key.json
 
 # vercel

@@ -255,7 +255,6 @@ pocket-cep/
   .env                          # Committed defaults with documentation
   .env.local                    # Secrets (gitignored)
   .env.local.example            # Template for .env.local
-  .env.test.*                   # Test flavor configs (gitignored)
   AGENTS.md                     # Coding standards
   CLAUDE.md -> AGENTS.md        # Symlink for Claude Code
   GEMINI.md -> AGENTS.md        # Symlink for Gemini
@@ -291,10 +290,8 @@ pocket-cep/
       agent-loop.ts             # LLM <-> MCP tool execution loop (with tool cache)
       access-token.ts           # Google OAuth token retrieval helper
       constants.ts              # System prompt, default models, log tags
-      env-flavors.ts            # Test env flavor loader
       doctor.ts                 # Environment diagnostic script
       doctor-checks.ts          # Shared LLM API key probe helpers
-      doctor-flavors.ts         # Multi-flavor diagnostic harness
       llm/
         types.ts                # Shared LLM adapter interface
         claude.ts               # Anthropic SDK adapter
@@ -304,9 +301,9 @@ pocket-cep/
     instrumentation.ts          # Server startup hook (auto-starts MCP server)
 
     __tests__/
-      unit/                     # 40 tests: env, constants, mcp-client, LLM adapters
-      integration/              # 42 tests: agent loop, user extraction, env flavors
-      e2e/                      # Playwright: landing page, auth flow, MCP connectivity
+      unit/                     # env + mcp-client + access-token
+      integration/              # admin-sdk query translation
+      e2e/                      # Playwright: landing, chat flow, scroll
 ```
 
 ## Scripts
@@ -325,57 +322,36 @@ pocket-cep/
 | `npm run test:watch` | Run tests in watch mode |
 | `npm run test:e2e` | Run Playwright E2E tests |
 | `npm run doctor` | Check your environment (env vars, MCP server, LLM API) |
-| `npm run doctor:flavors` | Validate all test env flavors (static checks) |
-| `npm run doctor:flavors -- --live` | Validate flavors with live MCP/LLM probes |
-| `npm run doctor:all` | Run both doctor and doctor:flavors |
 
 ## Testing
 
 ### Unit Tests (Vitest)
 
-Test pure logic without external dependencies. Mocks are used for SDK calls.
+Test pure logic without external dependencies.
 
 ```bash
-npm run test:unit    # 40 tests across 6 files
+npm run test:unit
 ```
 
-Covers: Zod env validation, system prompt generation, MCP client wrapper, access token retrieval, Claude adapter streaming, Gemini adapter streaming.
+Covers: Zod env validation, MCP client wrapper (mocked SDK), access token retrieval.
 
 ### Integration Tests (Vitest)
 
-Test module interactions with mocked external services.
-
 ```bash
-npm run test:integration    # 42 tests across 3 files
+npm run test:integration
 ```
 
-Covers: Agent loop (LLM <-> MCP orchestration), user extraction from activity logs, environment flavor validation across all 4 configuration combos.
+Covers: Admin SDK directory query translation.
 
 ### E2E Tests (Playwright)
 
-Test the real app in a browser against live services. Playwright auto-starts the dev server.
+Test the real app in a browser. Playwright auto-starts the dev server.
 
 ```bash
-npm run test:e2e    # 8 tests across 2 files
+npm run test:e2e
 ```
 
-Covers: Landing page rendering, Google OAuth flow initiation, route protection (proxy redirects), API route 401 responses, MCP server connectivity, real MCP tool execution.
-
-### Test Environment Flavors
-
-Four `.env.test.*` files cover every combination of auth mode and LLM provider:
-
-| Flavor | Auth Mode | LLM | Use case |
-|--------|----------|-----|----------|
-| `claude-sa` | service_account | Claude | Most common dev setup |
-| `claude-oauth` | user_oauth | Claude | Per-user token forwarding |
-| `gemini-sa` | service_account | Gemini | All-Google ecosystem |
-| `gemini-oauth` | user_oauth | Gemini | Full Google stack |
-
-```bash
-npm run doctor:flavors              # static validation
-npm run doctor:flavors -- --live    # also probe MCP server + LLM APIs
-```
+Covers: landing page rendering, chat transport wiring (selected user propagates across sends), scroll behavior (chat container and sidebar roster).
 
 ## Environment Diagnostics
 

@@ -16,9 +16,6 @@
     "test:integration": "vitest run src/__tests__/integration",
     "test:e2e": "playwright test",
     "doctor": "tsx src/lib/doctor.ts",
-    "doctor:flavors": "tsx src/lib/doctor-flavors.ts",
-    "doctor:flavors:live": "tsx src/lib/doctor-flavors.ts --live",
-    "doctor:all": "npm run doctor && npm run doctor:flavors",
     "check": "npm run typecheck && npm run lint && npm run test:unit && npm run test:integration"
   },
   "dependencies": {

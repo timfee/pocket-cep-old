@@ -13,10 +13,9 @@
  * Exit code 0 = all checks passed, 1 = at least one failed.
  */
 
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { serverSchema } from "./env";
-import { parseEnvFile } from "./env-flavors";
 import { getErrorMessage } from "./errors";
 import {
   PASS,
@@ -26,6 +25,24 @@ import {
   probeAnthropicKey,
   probeGeminiKey,
 } from "./doctor-checks";
+
+/**
+ * Minimal .env parser — handles `KEY=VALUE`, blank lines, and `#` comments.
+ * No quoting, no multiline, no variable expansion. We keep it trivial so
+ * doctor's diagnostics aren't confounded by parser quirks.
+ */
+function parseEnvFile(filePath: string): Record<string, string> {
+  const content = readFileSync(filePath, "utf-8");
+  const env: Record<string, string> = {};
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIndex = trimmed.indexOf("=");
+    if (eqIndex === -1) continue;
+    env[trimmed.slice(0, eqIndex).trim()] = trimmed.slice(eqIndex + 1).trim();
+  }
+  return env;
+}
 
 let passed = 0;
 let failed = 0;
@@ -46,8 +63,7 @@ function report(ok: boolean, message: string) {
 /**
  * Loads env files the same way Next.js does: .env first, then .env.local
  * overrides. Starts from process.env so any shell-exported vars are
- * included too. Reuses parseEnvFile from env-flavors.ts to avoid
- * duplicating the .env parser.
+ * included too.
  */
 function loadEnvFiles(): Record<string, string> {
   const env: Record<string, string> = Object.fromEntries(

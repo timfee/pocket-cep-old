@@ -24,7 +24,6 @@ export const LOG_TAGS = {
   AUTH: "[auth]",
   USERS: "[users]",
   ENV: "[env]",
-  FLAVORS: "[flavors]",
 } as const;
 
 /**

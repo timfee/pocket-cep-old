@@ -1,7 +1,5 @@
 /**
- * @file Shared diagnostic check functions used by both doctor.ts and
- * doctor-flavors.ts. Keeps probe logic in one place so the fetch URLs,
- * headers, and validity criteria don't drift between the two scripts.
+ * @file Diagnostic probe helpers used by `doctor.ts`.
  *
  * Each probe uses the lightest possible API call to verify credentials
  * without burning tokens or triggering rate limits.
