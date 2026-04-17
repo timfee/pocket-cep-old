@@ -54,6 +54,24 @@ function titleForPrompt(p: Prompt): string {
   return bare.charAt(0).toUpperCase() + bare.slice(1);
 }
 
+/**
+ * Small monospace chip that shows an MCP prompt name (e.g. `cep:health`).
+ * Used in suggestion cards and compact user-message chips.
+ */
+function PromptBadge({ name, prominent = false }: { name: string; prominent?: boolean }) {
+  return (
+    <span
+      className={
+        prominent
+          ? "bg-primary-light text-primary ring-primary/20 inline-flex items-center rounded-[var(--radius-xs)] px-2 py-0.5 font-mono text-[0.75rem] font-medium ring-1"
+          : "bg-surface-dim text-on-surface-variant ring-on-surface/10 inline-flex items-center rounded-[var(--radius-xs)] px-1.5 py-0.5 font-mono text-[0.6875rem] ring-1"
+      }
+    >
+      {name}
+    </span>
+  );
+}
+
 export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [prompts, setPrompts] = useState<Prompt[]>([]);
@@ -151,30 +169,36 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
 
   /**
    * Expands a server-authored prompt and sends it as a user turn. The
-   * server's prompt carries the formatting contract (e.g. `cep:health`
-   * dictates a specific table + severity-tier structure) so the model
-   * sees those rules when it generates the response.
+   * full expanded body goes to the model (so the formatting contract
+   * reaches it), but we tag the message with metadata so the UI can
+   * render it as a compact chip — the raw prompt is a wall of rules
+   * the user doesn't need to look at.
    */
   const runPrompt = useCallback(
-    async (name: string) => {
+    async (prompt: Prompt) => {
       if (promptExpanding || isStreaming) return;
-      setPromptExpanding(name);
+      setPromptExpanding(prompt.name);
       try {
         const res = await fetch("/api/prompts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name }),
+          body: JSON.stringify({ name: prompt.name }),
         });
         const body: { text?: string; error?: string } = await res.json();
         if (!res.ok || !body.text) throw new Error(body.error ?? "Prompt expansion failed");
-        handleSend(body.text);
+        await sendMessage({
+          text: body.text,
+          metadata: { promptName: prompt.name, promptTitle: titleForPrompt(prompt) },
+        });
+        setInput("");
+        setIsPinnedToBottom(true);
       } catch {
         /* silent — the LLM call will surface any real error */
       } finally {
         setPromptExpanding(null);
       }
     },
-    [promptExpanding, isStreaming, handleSend],
+    [promptExpanding, isStreaming, sendMessage],
   );
 
   const isEmpty = messages.length === 0;
@@ -199,7 +223,7 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
               selectedUser={selectedUser}
               prompts={suggestablePrompts}
               expandingName={promptExpanding}
-              onPick={runPrompt}
+              onRun={runPrompt}
             />
           ) : (
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
@@ -259,12 +283,12 @@ function EmptyState({
   selectedUser,
   prompts,
   expandingName,
-  onPick,
+  onRun,
 }: {
   selectedUser: string;
   prompts: Prompt[];
   expandingName: string | null;
-  onPick: (name: string) => void;
+  onRun: (prompt: Prompt) => void;
 }) {
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-8 pt-6">
@@ -305,9 +329,9 @@ function EmptyState({
                 >
                   <button
                     type="button"
-                    onClick={() => onPick(prompt.name)}
+                    onClick={() => onRun(prompt)}
                     disabled={busy || expandingName !== null}
-                    className={`surface-raised group slide-up stagger-${i + 1} flex h-full w-full flex-col gap-2 rounded-[var(--radius-sm)] p-3.5 text-left disabled:opacity-60`}
+                    className={`surface-raised group slide-up stagger-${i + 1} flex h-full w-full cursor-pointer flex-col gap-2 rounded-[var(--radius-sm)] p-3.5 text-left disabled:cursor-wait disabled:opacity-60`}
                   >
                     <div className="flex items-center gap-2.5">
                       <span className="bg-primary-light text-primary grid size-7 shrink-0 place-items-center rounded-[var(--radius-xs)]">
@@ -316,9 +340,7 @@ function EmptyState({
                       <span className="text-on-surface flex-1 text-sm font-medium">
                         {titleForPrompt(prompt)}
                       </span>
-                      <span className="text-on-surface-muted font-mono text-[0.6875rem]">
-                        {prompt.name}
-                      </span>
+                      <PromptBadge name={prompt.name} />
                       {busy ? (
                         <Loader2 className="text-on-surface-muted spin-slow size-3.5" />
                       ) : (

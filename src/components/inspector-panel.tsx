@@ -79,11 +79,14 @@ function InvocationCard({ invocation, index }: { invocation: InvocationPart; ind
           {getToolName(invocation)}
         </span>
         <span
-          className={cn("rounded-[2px] px-1 py-0.5 font-mono text-[9px] font-semibold", badgeClass)}
+          className={cn(
+            "inline-flex items-center rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[0.625rem] font-semibold tracking-wide uppercase",
+            badgeClass,
+          )}
         >
           {label}
         </span>
-        <span className="text-on-surface-muted font-mono text-[9px] tabular-nums">
+        <span className="text-on-surface-muted font-mono text-[0.625rem] tabular-nums">
           #{index + 1}
         </span>
       </button>

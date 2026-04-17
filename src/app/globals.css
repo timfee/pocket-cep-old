@@ -67,8 +67,15 @@ body {
   color: var(--color-on-surface);
   font-family: var(--font-sans);
   font-size: 0.9375rem;
-  line-height: 1.4375rem;
-  letter-spacing: -0.003em;
+  line-height: 1.45rem;
+  letter-spacing: -0.006em;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -0.018em;
 }
 
 ::selection {
@@ -193,11 +200,12 @@ body {
 .prose-chat p { margin: 0; }
 .prose-chat h1, .prose-chat h2, .prose-chat h3, .prose-chat h4 {
   font-family: var(--font-sans);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-on-surface);
-  line-height: 1.25;
-  letter-spacing: -0.015em;
+  line-height: 1.3;
+  letter-spacing: -0.022em;
 }
+.prose-chat strong { font-weight: 700; }
 .prose-chat > h1 + *,
 .prose-chat > h2 + *,
 .prose-chat > h3 + *,
@@ -214,7 +222,7 @@ body {
 .prose-chat h2 { font-size: 1.125rem; }
 .prose-chat h3 { font-size: 1.0625rem; }
 .prose-chat h4 { font-size: 1rem; }
-.prose-chat strong { font-weight: 600; color: var(--color-on-surface); }
+.prose-chat strong { color: var(--color-on-surface); }
 .prose-chat em { font-style: italic; }
 .prose-chat a {
   color: var(--color-primary);
@@ -297,4 +305,11 @@ body {
 input, textarea, button, select {
   font-family: inherit;
   font-feature-settings: inherit;
+}
+
+button:not(:disabled):not([aria-disabled="true"]),
+[role="button"]:not(:disabled):not([aria-disabled="true"]),
+[role="option"],
+a[href] {
+  cursor: pointer;
 }

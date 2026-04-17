@@ -5,7 +5,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, Copy, Check } from "lucide-react";
+import { Bot, Copy, Check, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/cn";
@@ -17,8 +17,29 @@ type ChatMessageProps = {
   message: UIMessage;
 };
 
+/**
+ * Messages produced by clicking an MCP prompt card carry a tiny
+ * metadata object. The UI collapses them to a compact chip so the full
+ * prompt body (which can be hundreds of lines of formatting rules)
+ * doesn't dominate the chat.
+ */
+type PromptMetadata = { promptName?: string; promptTitle?: string };
+
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === "user";
+  const promptMeta = isUser ? (message.metadata as PromptMetadata | undefined) : undefined;
+
+  if (promptMeta?.promptName) {
+    return (
+      <div className="slide-up flex justify-end">
+        <div className="bg-primary-light text-primary ring-primary/20 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1">
+          <Zap className="size-3" />
+          <span>Ran</span>
+          <span className="font-mono text-[0.75rem]">{promptMeta.promptName}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("slide-up flex gap-2", isUser ? "justify-end" : "justify-start")}>
@@ -98,29 +119,32 @@ function ToolPartCard({ part }: { part: InvocationPart }) {
     label === "ERROR"
       ? "bg-error/20 text-error"
       : label === "DONE"
-        ? "bg-success/20 text-green-700"
-        : "bg-primary/20 text-primary";
+        ? "bg-success-light text-green-700"
+        : "bg-primary-light text-primary";
 
   return (
-    <div className="bg-surface-dim ring-on-surface/10 my-1 rounded-[var(--radius-sm)] ring-1">
+    <div className="bg-surface-dim ring-on-surface/10 my-1.5 rounded-[var(--radius-sm)] ring-1">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-1.5 px-2.5 py-1 text-left"
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
       >
-        <span className="text-on-surface-variant flex-1 truncate font-mono text-[11px]">
+        <span className="text-on-surface flex-1 truncate font-mono text-xs">
           {getToolName(part)}
         </span>
         <span
-          className={cn("rounded-[2px] px-1 py-0.5 font-mono text-[9px] font-semibold", badgeClass)}
+          className={cn(
+            "inline-flex items-center rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[0.625rem] font-semibold tracking-wide uppercase",
+            badgeClass,
+          )}
         >
           {label}
         </span>
       </button>
 
       {expanded && (
-        <div className="border-on-surface/5 border-t px-2.5 py-1.5">
-          <pre className="bg-surface-container text-on-surface-variant overflow-x-auto rounded-[var(--radius-xs)] p-2 font-mono text-[11px] leading-4">
+        <div className="border-on-surface/5 border-t px-2.5 py-2">
+          <pre className="bg-surface-container text-on-surface-variant overflow-x-auto rounded-[var(--radius-xs)] p-2.5 font-mono text-[0.6875rem] leading-4">
             {JSON.stringify(
               {
                 input: part.input,
