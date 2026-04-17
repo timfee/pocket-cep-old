@@ -9,6 +9,8 @@
 
 import type { Metadata } from "next";
 import { Roboto, Roboto_Mono } from "next/font/google";
+import { AuthHealthProvider } from "@/components/auth-health-provider";
+import { AuthBanner } from "@/components/auth-banner";
 import "./globals.css";
 
 /**
@@ -44,7 +46,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${roboto.variable} ${robotoMono.variable} h-full`}>
-      <body className="flex min-h-dvh flex-col antialiased">{children}</body>
+      <body className="flex min-h-dvh flex-col antialiased">
+        <AuthHealthProvider>
+          <AuthBanner />
+          {children}
+        </AuthHealthProvider>
+      </body>
     </html>
   );
 }
