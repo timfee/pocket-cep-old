@@ -1,64 +1,115 @@
 /**
- * @file Chat input bar integrated with AI SDK's useChat.
+ * @file Chat input with an auto-growing textarea.
+ *
+ * Enter sends; Shift+Enter inserts a newline. While the agent is
+ * streaming, the send button becomes a stop button that calls
+ * `useChat`'s `stop()` to abort the in-flight request.
  */
 
 "use client";
 
-import { useRef, useEffect } from "react";
-import { ArrowUp, CornerDownLeft, Loader2 } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { ArrowUp, CornerDownLeft, Square } from "lucide-react";
 
 type ChatInputProps = {
   value: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onChange: (value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
-  isLoading: boolean;
+  isStreaming: boolean;
+  onStop: () => void;
   disabled?: boolean;
 };
 
-export function ChatInput({ value, onChange, onSubmit, isLoading, disabled }: ChatInputProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
+const MIN_ROWS = 1;
+const MAX_HEIGHT_PX = 180;
+
+export function ChatInput({
+  value,
+  onChange,
+  onSubmit,
+  isStreaming,
+  onStop,
+  disabled,
+}: ChatInputProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT_PX)}px`;
+  }, [value]);
 
   useEffect(() => {
-    if (!isLoading) inputRef.current?.focus();
-  }, [isLoading]);
+    if (!disabled && !isStreaming) textareaRef.current?.focus();
+  }, [disabled, isStreaming]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      if (!disabled && !isStreaming && value.trim()) {
+        onSubmit(e);
+      }
+    }
+  };
 
   return (
     <div className="bg-surface-dim border-on-surface/10 shrink-0 border-t px-4 pt-3 pb-4">
       <form
         onSubmit={onSubmit}
-        className="surface-raised relative mx-auto flex max-w-3xl items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 focus-within:border-[var(--color-primary)] focus-within:shadow-[0_0_0_3px_rgb(26_115_232_/_0.15),var(--shadow-elevation-1)]"
+        className="surface-raised relative mx-auto flex max-w-3xl items-end gap-2 rounded-[var(--radius-md)] px-3 py-2 focus-within:border-[var(--color-primary)] focus-within:shadow-[0_0_0_3px_rgb(26_115_232_/_0.15),var(--shadow-elevation-1)]"
       >
-        <input
-          ref={inputRef}
-          type="text"
+        <textarea
+          ref={textareaRef}
           value={value}
-          onChange={onChange}
-          disabled={disabled || isLoading}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={disabled}
+          rows={MIN_ROWS}
           placeholder={
-            disabled
-              ? "Select a user before asking a question…"
-              : isLoading
-                ? "Thinking…"
-                : "Ask the agent to investigate…"
+            disabled ? "Select a user before asking a question…" : "Ask the agent to investigate…"
           }
           aria-label="Chat message input"
-          name="prompt"
-          className="text-on-surface placeholder:text-on-surface-muted flex-1 bg-transparent text-[13.5px] focus:outline-none disabled:opacity-60"
+          className="text-on-surface placeholder:text-on-surface-muted max-h-[180px] flex-1 resize-none bg-transparent py-1 text-[0.875rem] leading-5 focus:outline-none disabled:opacity-60"
         />
 
-        <div className="text-on-surface-muted flex items-center gap-1 text-[10px] max-sm:hidden">
-          <CornerDownLeft className="size-3" />
-          <span>enter</span>
+        <div className="text-on-surface-muted flex shrink-0 items-center gap-2 pb-1 max-sm:hidden">
+          <span className="flex items-center gap-1 text-[0.625rem]">
+            <kbd className="bg-surface-dim ring-on-surface/10 rounded-[3px] px-1 py-0.5 font-mono text-[0.5625rem] ring-1">
+              <CornerDownLeft className="inline size-2.5" />
+            </kbd>
+            <span>send</span>
+          </span>
+          <span className="flex items-center gap-1 text-[0.625rem]">
+            <kbd className="bg-surface-dim ring-on-surface/10 rounded-[3px] px-1 py-0.5 font-mono text-[0.5625rem] ring-1">
+              ⇧
+            </kbd>
+            <kbd className="bg-surface-dim ring-on-surface/10 rounded-[3px] px-1 py-0.5 font-mono text-[0.5625rem] ring-1">
+              <CornerDownLeft className="inline size-2.5" />
+            </kbd>
+            <span>new line</span>
+          </span>
         </div>
 
-        <button
-          type="submit"
-          disabled={disabled || isLoading || !value.trim()}
-          aria-label="Send message"
-          className="bg-primary text-on-primary hover:bg-primary-hover focus-visible:outline-primary relative flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] shadow-[var(--shadow-elevation-1)] focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-30 disabled:shadow-none"
-        >
-          {isLoading ? <Loader2 className="spin-slow size-3.5" /> : <ArrowUp className="size-4" />}
-        </button>
+        {isStreaming ? (
+          <button
+            type="button"
+            onClick={onStop}
+            aria-label="Stop generating"
+            className="bg-on-surface text-surface hover:bg-ink focus-visible:outline-primary flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] shadow-[var(--shadow-elevation-1)] focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            <Square className="size-3 fill-current" />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={disabled || !value.trim()}
+            aria-label="Send message"
+            className="bg-primary text-on-primary hover:bg-primary-hover focus-visible:outline-primary flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] shadow-[var(--shadow-elevation-1)] focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-30 disabled:shadow-none"
+          >
+            <ArrowUp className="size-4" />
+          </button>
+        )}
       </form>
     </div>
   );

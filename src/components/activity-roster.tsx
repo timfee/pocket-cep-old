@@ -9,7 +9,6 @@
 "use client";
 
 import { useMemo } from "react";
-import { Activity } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { UserActivity } from "@/app/api/users/activity/route";
 
@@ -23,68 +22,62 @@ export function ActivityRoster({ activity, selectedUser, onPick }: ActivityRoste
   const ranked = useMemo(() => {
     const entries = Object.entries(activity);
     entries.sort((a, b) => b[1].eventCount - a[1].eventCount);
-    return entries.slice(0, 5);
+    return entries.slice(0, 6);
   }, [activity]);
 
   if (ranked.length === 0) {
     return (
-      <div className="flex flex-col gap-2">
-        <span className="eyebrow">Signals</span>
-        <p className="text-on-surface-muted text-[11px] leading-4">
-          No recent Chrome activity to surface. Roster fills in as audit events arrive.
-        </p>
-      </div>
+      <p className="text-on-surface-muted text-[0.6875rem] leading-4">
+        No Chrome audit events in the last 10 days. The list fills in as users generate activity.
+      </p>
     );
   }
 
   const maxCount = ranked[0][1].eventCount;
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-baseline justify-between">
-        <span className="eyebrow">Most active</span>
-        <span className="text-on-surface-muted font-mono text-[10px]">10-day window</span>
-      </div>
-      <ul className="flex flex-col gap-0.5" role="list">
-        {ranked.map(([email, entry]) => (
+    <ul role="list" className="flex flex-col gap-0.5">
+      {ranked.map(([email, entry]) => {
+        const isSelected = email === selectedUser;
+        const widthPct = Math.max(4, (entry.eventCount / maxCount) * 100);
+        return (
           <li key={email}>
             <button
               type="button"
               onClick={() => onPick(email)}
               className={cn(
                 "state-layer group relative flex w-full items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-left",
-                email === selectedUser && "bg-primary-light",
+                isSelected && "bg-primary-light",
               )}
             >
               <span
                 className={cn(
                   "size-1.5 shrink-0 rounded-full",
-                  email === selectedUser ? "bg-primary" : "bg-primary/60",
+                  isSelected ? "bg-primary" : "bg-primary/50",
                 )}
                 aria-hidden="true"
               />
               <span
                 className={cn(
-                  "flex-1 truncate font-mono text-[11px]",
-                  email === selectedUser ? "text-primary font-medium" : "text-on-surface",
+                  "min-w-0 flex-1 truncate font-mono text-[0.6875rem]",
+                  isSelected ? "text-primary font-medium" : "text-on-surface",
                 )}
               >
                 {email}
               </span>
-              <span className="text-on-surface-muted flex items-center gap-1 font-mono text-[10px] tabular-nums">
-                <Activity className="size-2.5" />
+              <span className="text-on-surface-muted font-mono text-[0.625rem] tabular-nums">
                 {entry.eventCount}
               </span>
 
               <span
-                className="bg-primary/20 absolute bottom-0 left-0 h-[1px]"
-                style={{ width: `${(entry.eventCount / maxCount) * 100}%` }}
+                className="bg-primary/25 pointer-events-none absolute bottom-0 left-0 h-px w-(--activity-bar)"
                 aria-hidden="true"
+                style={{ "--activity-bar": `${widthPct}%` } as React.CSSProperties}
               />
             </button>
           </li>
-        ))}
-      </ul>
-    </div>
+        );
+      })}
+    </ul>
   );
 }

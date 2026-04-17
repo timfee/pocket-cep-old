@@ -90,37 +90,38 @@ export default function DashboardPage() {
     <div className="isolate flex h-dvh flex-col">
       <AppBar />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="mx-auto flex w-full max-w-[1680px] flex-1 overflow-hidden">
         <aside className="bg-surface border-on-surface/10 flex w-72 shrink-0 flex-col border-r max-md:hidden lg:w-80">
-          <div className="border-on-surface/5 flex items-center justify-between border-b px-4 py-3">
-            <span className="eyebrow">Directory</span>
-            <span className="text-on-surface-muted font-mono text-[10px]">
-              {Object.keys(activity).length > 0 && `${Object.keys(activity).length} active`}
-            </span>
+          <div className="flex flex-1 flex-col overflow-y-auto">
+            <section className="flex flex-col gap-2 px-4 py-4">
+              <UserSelector selectedUser={selectedUser} onUserChange={setSelectedUser} />
+            </section>
+
+            <section className="border-on-surface/10 flex flex-col gap-2 border-t px-4 py-4">
+              <header className="flex items-baseline justify-between">
+                <h2 className="text-on-surface text-[0.8125rem] font-medium">Recent activity</h2>
+                <span className="text-on-surface-muted font-mono text-[0.625rem] tabular-nums">
+                  10 days
+                </span>
+              </header>
+              <ActivityRoster
+                activity={activity}
+                selectedUser={selectedUser}
+                onPick={setSelectedUser}
+              />
+            </section>
           </div>
 
-          <div className="px-3 py-3">
-            <UserSelector selectedUser={selectedUser} onUserChange={setSelectedUser} />
-          </div>
-
-          <div className="border-on-surface/5 border-t px-3 py-3">
-            <ActivityRoster
-              activity={activity}
-              selectedUser={selectedUser}
-              onPick={setSelectedUser}
-            />
-          </div>
-
-          <div className="border-on-surface/5 mt-auto flex flex-col gap-0.5 border-t px-2 py-2">
+          <div className="border-on-surface/10 flex flex-col gap-0.5 border-t px-2 py-2">
             <button
               type="button"
               onClick={toggleInspector}
-              className="state-layer text-on-surface-variant hover:text-on-surface flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-xs"
+              className="state-layer text-on-surface-variant flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-xs"
             >
               <Wrench className="size-3.5" />
-              <span>MCP Inspector</span>
+              <span>MCP inspector</span>
               {toolInvocations.length > 0 && (
-                <span className="bg-primary-light text-primary ml-auto rounded-full px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums">
+                <span className="bg-primary-light text-primary ml-auto rounded-full px-1.5 py-0.5 font-mono text-[0.625rem] font-medium tabular-nums">
                   {toolInvocations.length}
                 </span>
               )}
@@ -130,7 +131,7 @@ export default function DashboardPage() {
               type="button"
               onClick={() => setToolInvocations([])}
               disabled={toolInvocations.length === 0}
-              className="state-layer text-on-surface-muted hover:text-on-surface flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-xs disabled:opacity-40"
+              className="state-layer text-on-surface-muted flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-xs disabled:opacity-40"
             >
               <Eraser className="size-3.5" />
               <span>Clear inspector</span>

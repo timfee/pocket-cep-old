@@ -42,7 +42,7 @@ test.describe("Chat transport wiring", () => {
 
     await searchInput.fill("alice@example.com");
     await searchInput.press("Enter");
-    await page.getByRole("button", { name: /Show recent Chrome activity/i }).click();
+    await page.getByRole("button", { name: /Recent Chrome activity/i }).click();
 
     await expect.poll(() => chatRequests.length).toBe(1);
     expect(chatRequests[0]).toMatchObject({ selectedUser: "alice@example.com" });
