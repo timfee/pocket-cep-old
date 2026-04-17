@@ -4,6 +4,8 @@
 
 import { getErrorMessage } from "./errors";
 import { LOG_TAGS } from "./constants";
+import { getADCToken, getQuotaProject } from "./adc";
+import { isAuthError } from "./auth-errors";
 
 /**
  * Converts a user-typed search string into Admin SDK query syntax.
@@ -26,6 +28,10 @@ export type DirectoryUser = {
 
 /**
  * Searches the Google Workspace user directory via the Admin SDK REST API.
+ *
+ * Throws `AuthError` on credential failure so API routes can return a
+ * structured 401. Non-auth failures return an empty array (existing
+ * behavior) — they're logged but treated as "no results".
  *
  * Supports Admin SDK query syntax:
  *   - "email:alice*" for email prefix
@@ -50,11 +56,6 @@ export async function searchUsers(
 
   const url = `https://admin.googleapis.com/admin/directory/v1/users?${params}`;
   const token = accessToken ?? (await getADCToken());
-
-  if (!token) {
-    console.error(LOG_TAGS.USERS, "No access token available for Admin SDK call");
-    return [];
-  }
 
   try {
     const headers: Record<string, string> = {
@@ -104,46 +105,8 @@ export async function searchUsers(
       suspended: u.suspended,
     }));
   } catch (error) {
+    if (isAuthError(error)) throw error;
     console.error(LOG_TAGS.USERS, "Admin SDK search failed:", getErrorMessage(error));
     return [];
-  }
-}
-
-/**
- * Gets an access token from Application Default Credentials.
- */
-async function getADCToken(): Promise<string | null> {
-  try {
-    const { GoogleAuth } = await import("google-auth-library");
-    const auth = new GoogleAuth({
-      scopes: ["https://www.googleapis.com/auth/admin.directory.user.readonly"],
-    });
-    const client = await auth.getClient();
-    const tokenResponse = await client.getAccessToken();
-    return tokenResponse?.token ?? null;
-  } catch (error) {
-    console.error(LOG_TAGS.USERS, "Failed to get ADC token:", getErrorMessage(error));
-    return null;
-  }
-}
-
-/**
- * Reads the quota_project_id from the ADC credentials file.
- * Falls back to GOOGLE_CLOUD_QUOTA_PROJECT env var.
- */
-async function getQuotaProject(): Promise<string | null> {
-  if (process.env.GOOGLE_CLOUD_QUOTA_PROJECT) {
-    return process.env.GOOGLE_CLOUD_QUOTA_PROJECT;
-  }
-
-  try {
-    const { readFileSync } = await import("fs");
-    const { join } = await import("path");
-    const { homedir } = await import("os");
-    const credPath = join(homedir(), ".config", "gcloud", "application_default_credentials.json");
-    const creds = JSON.parse(readFileSync(credPath, "utf-8"));
-    return creds.quota_project_id ?? null;
-  } catch {
-    return null;
   }
 }
