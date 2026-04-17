@@ -1,0 +1,87 @@
+/**
+ * @file Utility for loading named environment "flavors" from .env.test.* files.
+ *
+ * Each flavor represents a specific configuration combo (e.g. Claude +
+ * service_account, Gemini + user_oauth). This module parses a flavor file
+ * into a plain object suitable for passing to Zod's serverSchema.safeParse().
+ *
+ * Used by:
+ *   - The flavor integration test suite to validate each combo
+ *   - The doctor:flavors script to probe each configuration
+ *
+ * Extension point: add a new .env.test.{name} file and include the name
+ * in FLAVOR_NAMES below to automatically include it in all harnesses.
+ */
+
+import { readFileSync, existsSync } from "fs";
+import { resolve } from "path";
+
+/**
+ * All available flavor names. Each corresponds to a .env.test.{name} file
+ * in the project root. If you add a new flavor file, add its name here.
+ */
+export const FLAVOR_NAMES = ["claude-sa", "claude-oauth", "gemini-sa", "gemini-oauth"] as const;
+
+export type FlavorName = (typeof FLAVOR_NAMES)[number];
+
+/**
+ * Parses a .env-style file into a key-value object. Handles comments,
+ * blank lines, and simple KEY=VALUE syntax. Does not support multiline
+ * values, variable expansion, or quoting (keep test flavors simple).
+ */
+export function parseEnvFile(filePath: string): Record<string, string> {
+  const content = readFileSync(filePath, "utf-8");
+  const env: Record<string, string> = {};
+
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const eqIndex = trimmed.indexOf("=");
+    if (eqIndex === -1) continue;
+
+    const key = trimmed.slice(0, eqIndex).trim();
+    const value = trimmed.slice(eqIndex + 1).trim();
+    env[key] = value;
+  }
+
+  return env;
+}
+
+/**
+ * Loads a named flavor's env vars from its .env.test.{name} file.
+ * Throws if the file doesn't exist (indicates a missing flavor file,
+ * not a user config error — this is a developer mistake).
+ */
+export function loadFlavor(name: FlavorName): Record<string, string> {
+  const filePath = resolve(process.cwd(), `.env.test.${name}`);
+
+  if (!existsSync(filePath)) {
+    throw new Error(
+      `Flavor file not found: .env.test.${name}\n` +
+        `Expected at: ${filePath}\n` +
+        `Run the setup instructions in the README to create flavor files.`,
+    );
+  }
+
+  return parseEnvFile(filePath);
+}
+
+/**
+ * Loads all flavors and returns them as a map of name → env object.
+ * Skips flavors whose files are missing (logs a warning instead of throwing).
+ */
+export function loadAllFlavors(): Map<FlavorName, Record<string, string>> {
+  const flavors = new Map<FlavorName, Record<string, string>>();
+
+  for (const name of FLAVOR_NAMES) {
+    const filePath = resolve(process.cwd(), `.env.test.${name}`);
+    if (!existsSync(filePath)) {
+      console.warn(`[flavors] Skipping missing flavor: .env.test.${name}`);
+      continue;
+    }
+    flavors.set(name, parseEnvFile(filePath));
+  }
+
+  return flavors;
+}

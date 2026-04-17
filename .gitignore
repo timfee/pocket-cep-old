@@ -30,8 +30,13 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files — .env (defaults) and .env.local.example are committed;
+# .env.local holds secrets and is gitignored.
+# .env.test.* are test flavor files with fake credentials.
+.env.local
+.env.*.local
+.env.test.*
+sa-key.json
 
 # vercel
 .vercel
@@ -39,3 +44,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+test-results/

@@ -1,26 +1,49 @@
 {
-  "name": "pocket-cep-scaffold",
+  "name": "pocket-cep",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint src/ --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run src/__tests__/unit",
+    "test:integration": "vitest run src/__tests__/integration",
+    "test:e2e": "playwright test",
+    "doctor": "tsx src/lib/doctor.ts",
+    "doctor:flavors": "tsx src/lib/doctor-flavors.ts",
+    "doctor:flavors:live": "tsx src/lib/doctor-flavors.ts --live",
+    "doctor:all": "npm run doctor && npm run doctor:flavors",
+    "check": "npm run typecheck && npm run lint && npm run test:unit && npm run test:integration"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
+    "@google/generative-ai": "^0.24.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-auth": "^1.6.5",
     "next": "16.2.4",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "prettier": "^3.8.3",
+    "prettier-plugin-tailwindcss": "^0.7.2",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.21.0",
+    "typescript": "^5",
+    "vitest": "^4.1.4"
   }
 }

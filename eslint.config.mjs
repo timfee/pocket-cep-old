@@ -1,18 +1,52 @@
+/**
+ * @file ESLint flat config for Pocket CEP.
+ *
+ * Uses the modern flat config format (eslint.config.mjs) with
+ * Next.js recommended rules, TypeScript-aware rules, and Prettier
+ * as a fixable ESLint rule. Running `eslint --fix` handles both
+ * code quality and formatting in one pass.
+ */
+
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import prettier from "eslint-config-prettier";
+import prettierPlugin from "eslint-plugin-prettier";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Override default ignores of eslint-config-next.
-  globalIgnores([
-    // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-  ]),
+
+  // Prettier as a fixable ESLint rule — `eslint --fix` formats code too.
+  prettier,
+  {
+    plugins: { prettier: prettierPlugin },
+    rules: {
+      "prettier/prettier": "warn",
+    },
+  },
+
+  // Project rules.
+  {
+    rules: {
+      "prefer-const": "error",
+      "no-var": "error",
+      eqeqeq: ["error", "always"],
+
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+
+      "@typescript-eslint/explicit-function-return-type": "off",
+      "@typescript-eslint/no-empty-interface": "off",
+
+      "react/jsx-key": "error",
+      "jsx-a11y/alt-text": "error",
+    },
+  },
+
+  globalIgnores([".next/**", "out/**", "build/**", "node_modules/**", "next-env.d.ts"]),
 ]);
 
 export default eslintConfig;
