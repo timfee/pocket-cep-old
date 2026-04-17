@@ -1,20 +1,16 @@
 /**
- * @file Dropdown to select a user for investigation.
+ * @file Autocomplete combobox for selecting a user to investigate.
  *
- * Fetches the list of users from /api/users and displays them in
- * an MD3-styled select. The selected user's email is passed to the
- * chat agent as context.
+ * Pre-loads all managed Chrome users from /api/users (profiles + activity).
+ * Users with recent activity appear first. Typing filters the list by email.
+ * You can also type any email manually for users not in the list.
  */
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getErrorMessage } from "@/lib/errors";
-
-type UserEntry = {
-  email: string;
-  eventCount: number;
-};
+import type { UserEntry } from "@/app/api/users/route";
 
 type UserSelectorProps = {
   selectedUser: string;
@@ -25,6 +21,10 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
   const [users, setUsers] = useState<UserEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState(selectedUser);
+  const [isOpen, setIsOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -41,6 +41,7 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
 
       if (!selectedUser && data.users.length > 0) {
         onUserChange(data.users[0].email);
+        setQuery(data.users[0].email);
       }
     } catch (err) {
       setError(getErrorMessage(err));
@@ -52,6 +53,41 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
   useEffect(() => {
     fetchUsers();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Filter users by query.
+  const filtered = query
+    ? users.filter((u) => u.email.toLowerCase().includes(query.toLowerCase()))
+    : users;
+
+  const selectUser = (email: string) => {
+    onUserChange(email);
+    setQuery(email);
+    setIsOpen(false);
+  };
+
+  const handleInputChange = (value: string) => {
+    setQuery(value);
+    setIsOpen(true);
+  };
+
+  const handleBlur = () => {
+    // Delay close so click on list item registers first.
+    setTimeout(() => setIsOpen(false), 200);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (filtered.length > 0) {
+        selectUser(filtered[0].email);
+      } else if (query.includes("@")) {
+        selectUser(query);
+      }
+    }
+    if (e.key === "Escape") {
+      setIsOpen(false);
+    }
+  };
 
   if (error) {
     return (
@@ -72,41 +108,71 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor="user-select" className="text-on-surface text-xs font-medium">
+    <div className="relative flex flex-col gap-1.5">
+      <label htmlFor="user-search" className="text-on-surface text-xs font-medium">
         Investigate user
       </label>
 
       <div className="flex items-center gap-1.5">
-        <div className="inline-grid flex-1 grid-cols-[1fr_--spacing(8)]">
-          <select
-            id="user-select"
-            value={selectedUser}
-            onChange={(e) => onUserChange(e.target.value)}
-            disabled={loading}
+        <div className="relative flex-1">
+          <input
+            ref={inputRef}
+            id="user-search"
+            type="text"
             name="selectedUser"
-            className="bg-surface text-on-surface focus:ring-primary disabled:bg-surface-container disabled:text-on-surface-muted ring-on-surface/10 col-span-full row-start-1 w-full appearance-none rounded-[var(--radius-xs)] py-1.5 pr-8 pl-3 text-xs ring-1 focus:ring-2 focus:outline-none"
-          >
-            {loading && <option value="">Loading users...</option>}
-            {!loading && users.length === 0 && (
-              <option value="">No users with recent events</option>
-            )}
-            {users.map((user) => (
-              <option key={user.email} value={user.email}>
-                {user.email} ({user.eventCount} events)
-              </option>
-            ))}
-          </select>
+            role="combobox"
+            aria-expanded={isOpen}
+            aria-autocomplete="list"
+            aria-controls="user-listbox"
+            value={query}
+            onChange={(e) => handleInputChange(e.target.value)}
+            onFocus={() => setIsOpen(true)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            disabled={loading}
+            placeholder={loading ? "Loading users..." : "Search by email..."}
+            className="bg-surface text-on-surface placeholder:text-on-surface-muted focus:ring-primary disabled:bg-surface-container disabled:text-on-surface-muted ring-on-surface/10 w-full rounded-[var(--radius-xs)] py-1.5 pr-8 pl-3 text-xs ring-1 focus:ring-2 focus:outline-none"
+          />
           <svg
-            viewBox="0 0 8 5"
-            width="8"
-            height="5"
-            fill="none"
-            className="pointer-events-none col-start-2 row-start-1 place-self-center"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            className="text-on-surface-muted pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2"
             aria-hidden="true"
           >
-            <path d="M.5.5 4 4 7.5.5" stroke="currentcolor" />
+            <path
+              fillRule="evenodd"
+              d="M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z"
+              clipRule="evenodd"
+            />
           </svg>
+
+          {isOpen && filtered.length > 0 && (
+            <ul
+              ref={listRef}
+              id="user-listbox"
+              role="listbox"
+              className="bg-surface ring-on-surface/10 absolute top-full left-0 z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-[var(--radius-sm)] py-1 shadow-[var(--shadow-elevation-2)] ring-1"
+            >
+              {filtered.map((user) => (
+                <li
+                  key={user.email}
+                  role="option"
+                  aria-selected={user.email === selectedUser}
+                  onMouseDown={() => selectUser(user.email)}
+                  className={`state-layer flex cursor-pointer items-center gap-2 px-3 py-1.5 ${
+                    user.email === selectedUser ? "bg-primary-light" : ""
+                  }`}
+                >
+                  <span className="flex-1 truncate text-xs">{user.email}</span>
+                  {user.eventCount > 0 && (
+                    <span className="text-on-surface-muted text-[10px] tabular-nums">
+                      {user.eventCount} events
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <button

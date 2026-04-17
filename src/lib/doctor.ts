@@ -97,12 +97,6 @@ async function main() {
         ? "GOOGLE_CLIENT_ID format looks correct"
         : "GOOGLE_CLIENT_ID looks unusual (expected format: *.apps.googleusercontent.com)",
     );
-
-    if (data.MCP_SERVER_CMD) {
-      report(true, `MCP_SERVER_CMD: ${data.MCP_SERVER_CMD} (auto-start enabled)`);
-    } else {
-      console.log(`  ${WARN} MCP_SERVER_CMD not set — you must start the MCP server manually`);
-    }
   } else {
     report(false, "Environment variable validation failed:");
     for (const issue of parseResult.error.issues) {

@@ -58,7 +58,23 @@ async function connect(
   });
 
   const client = new Client({ name: "pocket-cep", version: "1.0.0" });
-  await client.connect(transport);
+
+  try {
+    await client.connect(transport);
+  } catch (error) {
+    await transport.close().catch(() => {});
+    const msg = error instanceof Error ? error.message : String(error);
+
+    if (msg.includes("fetch failed") || msg.includes("ECONNREFUSED")) {
+      throw new Error(
+        `Cannot connect to MCP server at ${serverUrl}. ` +
+          "Is it running? Start it with: npm run dev:full " +
+          "(or: GCP_STDIO=false PORT=4000 npx @google/chrome-enterprise-premium-mcp@latest)",
+      );
+    }
+
+    throw new Error(`MCP connection failed: ${msg}`);
+  }
 
   return { client, transport };
 }

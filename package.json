@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:full": "concurrently -k -n app,mcp -c blue,green \"next dev\" \"GCP_STDIO=false PORT=4000 ${MCP_SERVER_CMD:-npx @google/chrome-enterprise-premium-mcp@latest}\"",
     "build": "next build",
     "start": "next start",
     "lint": "eslint src/ --fix",
@@ -35,6 +36,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "eslint-config-prettier": "^10.1.8",

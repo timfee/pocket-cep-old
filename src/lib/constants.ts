@@ -12,7 +12,6 @@
  */
 export const LOG_TAGS = {
   MCP: "[mcp]",
-  MCP_CHILD: "[mcp-server]",
   CHAT: "[chat]",
   AUTH: "[auth]",
   ENV: "[env]",

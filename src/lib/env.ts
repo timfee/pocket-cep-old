@@ -48,7 +48,6 @@ export const serverSchema = z
 
     // MCP Server
     MCP_SERVER_URL: z.string().url().default("http://localhost:4000/mcp"),
-    MCP_SERVER_CMD: z.string().optional().default(""),
 
     // LLM
     LLM_PROVIDER: llmProviderSchema.default("claude"),
