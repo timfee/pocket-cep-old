@@ -22,6 +22,7 @@ export const LOG_TAGS = {
   MCP: "[mcp]",
   CHAT: "[chat]",
   AUTH: "[auth]",
+  USERS: "[users]",
   ENV: "[env]",
   FLAVORS: "[flavors]",
 } as const;
