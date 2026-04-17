@@ -54,6 +54,11 @@ export class AuthError extends Error implements AuthErrorPayload {
    */
   readonly displayMessage: string;
 
+  /**
+   * Sets `this.message` to the JSON-serialized payload so the AI SDK's
+   * output-error state carries the full structured data through to the UI.
+   * The human-readable summary is available on `displayMessage` instead.
+   */
   constructor(payload: AuthErrorPayload) {
     super(JSON.stringify(payload));
     this.name = "AuthError";
@@ -233,7 +238,7 @@ export function toAuthError(
   if (/Could not load the default credentials|application[- ]default[- ]credentials/i.test(message)) {
     return new AuthError(buildPayload("no_adc", source));
   }
-  if (/UNAUTHENTICATED|401|unauthorized/i.test(message)) {
+  if (/UNAUTHENTICATED|unauthorized/i.test(message)) {
     return new AuthError(buildPayload("unauthenticated", source));
   }
 

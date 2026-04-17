@@ -117,4 +117,9 @@ describe("isAuthError", () => {
     expect(isAuthError("string")).toBe(false);
     expect(isAuthError(null)).toBe(false);
   });
+
+  it("recognises cross-realm objects with name 'AuthError'", () => {
+    expect(isAuthError({ name: "AuthError", code: "invalid_grant" })).toBe(true);
+    expect(isAuthError({ name: "OtherError" })).toBe(false);
+  });
 });
