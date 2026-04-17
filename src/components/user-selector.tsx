@@ -14,6 +14,8 @@ import { Search, Loader2, UserX, Check, Activity } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import { getErrorMessage } from "@/lib/errors";
+import { authAwareFetch } from "@/lib/auth-aware-fetch";
+import type { AuthErrorPayload } from "@/lib/auth-errors";
 import type { DirectoryUser } from "@/app/api/users/route";
 import type { UserActivity } from "@/app/api/users/activity/route";
 
@@ -31,6 +33,7 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
   const [users, setUsers] = useState<DirectoryUser[]>([]);
   const [state, setState] = useState<SearchState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [authPayload, setAuthPayload] = useState<AuthErrorPayload | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -46,17 +49,26 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
     const id = ++requestIdRef.current;
     setState("loading");
     setError(null);
+    setAuthPayload(null);
 
     try {
-      const response = await fetch(`/api/users?q=${encodeURIComponent(q)}`, {
+      const response = await authAwareFetch(`/api/users?q=${encodeURIComponent(q)}`, {
         signal: controller.signal,
       });
 
       if (id !== requestIdRef.current) return;
 
       if (!response.ok) {
-        const body = await response.json().catch(() => ({ error: "Request failed" }));
-        throw new Error(body.error ?? `HTTP ${response.status}`);
+        const body = (await response.json().catch(() => ({}))) as {
+          error?: string | AuthErrorPayload;
+        };
+        if (response.status === 401 && isPayload(body.error)) {
+          setAuthPayload(body.error);
+          setError(body.error.remedy);
+          setState("error");
+          return;
+        }
+        throw new Error(typeof body.error === "string" ? body.error : `HTTP ${response.status}`);
       }
 
       const body: unknown = await response.json();
@@ -145,14 +157,16 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
     });
   }, [users, activity, query]);
 
-  const isCredentialError =
-    error &&
-    (error.includes("credentials") ||
-      error.includes("expired") ||
-      error.includes("quota") ||
-      error.includes("gcloud") ||
-      error.includes("invalid_grant") ||
-      error.includes("UNAUTHENTICATED"));
+  function isPayload(v: unknown): v is AuthErrorPayload {
+    return (
+      typeof v === "object" &&
+      v !== null &&
+      typeof (v as AuthErrorPayload).code === "string" &&
+      typeof (v as AuthErrorPayload).remedy === "string"
+    );
+  }
+
+  const isCredentialError = authPayload !== null;
 
   return (
     <div className="relative flex flex-col gap-1.5">
@@ -210,6 +224,11 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
                   {isCredentialError ? "Credential Error" : "Search Failed"}
                 </p>
                 <p className="text-error/80 mt-1 text-[11px] leading-4">{error}</p>
+                {authPayload?.command && (
+                  <code className="bg-surface-container text-on-surface-variant mt-1.5 block rounded-[var(--radius-xs)] px-2 py-1 font-mono text-[11px]">
+                    {authPayload.command}
+                  </code>
+                )}
                 <button
                   type="button"
                   onMouseDown={() => search(query)}
