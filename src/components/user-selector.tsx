@@ -166,7 +166,7 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
 
   return (
     <div className="relative flex flex-col gap-1.5">
-      <label htmlFor="user-search" className="text-on-surface text-xs font-medium">
+      <label htmlFor="user-search" className="text-on-surface text-sm font-medium">
         Investigate user
       </label>
 
@@ -193,8 +193,8 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
           onFocus={() => setIsOpen(true)}
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
-          placeholder="Search users by email or name..."
-          className="bg-surface text-on-surface placeholder:text-on-surface-muted focus:ring-primary ring-on-surface/10 w-full rounded-[var(--radius-xs)] py-1.5 pr-3 pl-8 text-xs ring-1 focus:ring-2 focus:outline-none"
+          placeholder="Search by email or name…"
+          className="bg-surface text-on-surface placeholder:text-on-surface-muted focus:ring-primary ring-on-surface/10 w-full rounded-[var(--radius-xs)] py-2 pr-3 pl-8 text-sm ring-1 focus:ring-2 focus:outline-none"
         />
 
         {isOpen && (
@@ -252,14 +252,14 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
                         <span className="size-1.5 shrink-0" aria-hidden="true" />
                       )}
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs">{user.email}</p>
+                        <p className="truncate text-sm">{user.email}</p>
                         {user.name && user.name !== user.email && (
-                          <p className="text-on-surface-muted truncate text-[10px]">{user.name}</p>
+                          <p className="text-on-surface-muted truncate text-xs">{user.name}</p>
                         )}
                       </div>
                       {act && (
                         <span
-                          className="text-primary flex shrink-0 items-center gap-0.5 font-mono text-[10px] tabular-nums"
+                          className="text-primary flex shrink-0 items-center gap-1 text-xs tabular-nums"
                           title={`${act.eventCount} recent event${act.eventCount === 1 ? "" : "s"}`}
                         >
                           <Activity className="size-3" />
@@ -267,7 +267,7 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
                         </span>
                       )}
                       {user.suspended && (
-                        <span className="text-on-surface-muted text-[10px]">Suspended</span>
+                        <span className="text-on-surface-muted text-xs">Suspended</span>
                       )}
                     </li>
                   );

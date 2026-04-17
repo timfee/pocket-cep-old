@@ -30,10 +30,10 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const { messages, selectedUser }: { messages: UIMessage[]; selectedUser: string } = body;
+  const { messages, selectedUser = "" }: { messages: UIMessage[]; selectedUser?: string } = body;
 
-  if (!messages || !selectedUser) {
-    return new Response(JSON.stringify({ error: "messages and selectedUser are required" }), {
+  if (!messages) {
+    return new Response(JSON.stringify({ error: "messages is required" }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
@@ -42,7 +42,10 @@ export async function POST(request: Request) {
   const config = getEnv();
   const accessToken = await getGoogleAccessToken();
 
-  console.log(LOG_TAGS.CHAT, `Chat for "${selectedUser}", ${messages.length} messages`);
+  console.log(
+    LOG_TAGS.CHAT,
+    `Chat for ${selectedUser || "(no user)"}, ${messages.length} messages`,
+  );
 
   let tools;
   try {

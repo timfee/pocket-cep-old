@@ -26,11 +26,7 @@ export function ActivityRoster({ activity, selectedUser, onPick }: ActivityRoste
   }, [activity]);
 
   if (ranked.length === 0) {
-    return (
-      <p className="text-on-surface-muted text-[0.6875rem] leading-4">
-        No Chrome audit events in the last 10 days. The list fills in as users generate activity.
-      </p>
-    );
+    return <p className="text-on-surface-muted text-xs">No recent activity.</p>;
   }
 
   const maxCount = ranked[0][1].eventCount;
@@ -59,13 +55,13 @@ export function ActivityRoster({ activity, selectedUser, onPick }: ActivityRoste
               />
               <span
                 className={cn(
-                  "min-w-0 flex-1 truncate font-mono text-[0.6875rem]",
+                  "min-w-0 flex-1 truncate font-mono text-xs",
                   isSelected ? "text-primary font-medium" : "text-on-surface",
                 )}
               >
                 {email}
               </span>
-              <span className="text-on-surface-muted font-mono text-[0.625rem] tabular-nums">
+              <span className="text-on-surface-muted font-mono text-xs tabular-nums">
                 {entry.eventCount}
               </span>
 

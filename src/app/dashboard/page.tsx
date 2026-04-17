@@ -99,10 +99,8 @@ export default function DashboardPage() {
 
             <section className="border-on-surface/10 flex flex-col gap-2 border-t px-4 py-4">
               <header className="flex items-baseline justify-between">
-                <h2 className="text-on-surface text-[0.8125rem] font-medium">Recent activity</h2>
-                <span className="text-on-surface-muted font-mono text-[0.625rem] tabular-nums">
-                  10 days
-                </span>
+                <h2 className="text-on-surface text-sm font-medium">Recent activity</h2>
+                <span className="text-on-surface-muted text-xs tabular-nums">10 days</span>
               </header>
               <ActivityRoster
                 activity={activity}
@@ -116,12 +114,12 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={toggleInspector}
-              className="state-layer text-on-surface-variant flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-xs"
+              className="state-layer text-on-surface-variant flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-sm"
             >
-              <Wrench className="size-3.5" />
+              <Wrench className="size-4" />
               <span>MCP inspector</span>
               {toolInvocations.length > 0 && (
-                <span className="bg-primary-light text-primary ml-auto rounded-full px-1.5 py-0.5 font-mono text-[0.625rem] font-medium tabular-nums">
+                <span className="bg-primary-light text-primary ml-auto rounded-full px-1.5 py-0.5 text-xs font-medium tabular-nums">
                   {toolInvocations.length}
                 </span>
               )}
@@ -131,9 +129,9 @@ export default function DashboardPage() {
               type="button"
               onClick={() => setToolInvocations([])}
               disabled={toolInvocations.length === 0}
-              className="state-layer text-on-surface-muted flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-xs disabled:opacity-40"
+              className="state-layer text-on-surface-muted flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-sm disabled:opacity-40"
             >
-              <Eraser className="size-3.5" />
+              <Eraser className="size-4" />
               <span>Clear inspector</span>
             </button>
           </div>

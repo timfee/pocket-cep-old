@@ -78,19 +78,12 @@ type SessionChipProps = {
 
 function SessionChip({ isAnonymous, email, onSignOut }: SessionChipProps) {
   if (isAnonymous) {
-    return (
-      <span className="bg-surface-dim ring-on-surface/10 flex items-center gap-2 rounded-[var(--radius-sm)] px-2.5 py-1 text-[0.6875rem] ring-1">
-        <span className="bg-warning pulse-dot size-1.5 rounded-full" aria-hidden="true" />
-        <span className="text-on-surface font-medium">Service account</span>
-      </span>
-    );
+    return null;
   }
 
   return (
     <div className="flex items-center gap-2.5">
-      {email && (
-        <span className="text-on-surface-variant text-[0.75rem] max-sm:hidden">{email}</span>
-      )}
+      {email && <span className="text-on-surface-variant text-sm max-sm:hidden">{email}</span>}
       <button
         type="button"
         onClick={onSignOut}

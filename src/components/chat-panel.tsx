@@ -1,14 +1,9 @@
 /**
  * @file Main chat panel using the Vercel AI SDK v6 useChat hook.
  *
- * The inspector panel feed is deduplicated: we only forward a tool part
- * to the parent when its `(toolCallId, state)` pair changes. Without
- * this guard, every streaming token update would re-forward every part.
- *
- * Scroll behavior: we auto-follow the bottom while streaming ONLY when
- * the user is already near the bottom. If they scroll up to re-read
- * earlier output, we stop chasing them and surface a "Jump to latest"
- * pill they can click to resume.
+ * Scroll behavior: auto-follow the bottom while streaming ONLY when the
+ * user is already near the bottom. If they scroll up, we stop chasing
+ * and surface a "Jump to latest" pill to resume.
  */
 
 "use client";
@@ -32,21 +27,39 @@ type SuggestedPrompt = {
   icon: React.ComponentType<{ className?: string }>;
 };
 
-const SUGGESTED_PROMPTS: SuggestedPrompt[] = [
+const SUGGESTED_WITH_USER: SuggestedPrompt[] = [
   {
     title: "Recent Chrome activity",
-    body: "Pull the last 10 days of audit events for this user.",
+    body: "Show the last 10 days of audit events for this user.",
     icon: FileSearch,
   },
   {
     title: "CEP license status",
-    body: "Check whether this user has an active Chrome Enterprise Premium seat.",
+    body: "Does this user have an active Chrome Enterprise Premium seat?",
     icon: Scale,
   },
   {
     title: "Environment health",
-    body: "Run the diagnostic: APIs enabled, connectors live, policies applied.",
+    body: "Run the diagnostic: APIs, connectors, policies.",
     icon: Stethoscope,
+  },
+];
+
+const SUGGESTED_WITHOUT_USER: SuggestedPrompt[] = [
+  {
+    title: "Environment health",
+    body: "Run the diagnostic: APIs, connectors, policies.",
+    icon: Stethoscope,
+  },
+  {
+    title: "Active DLP rules",
+    body: "List the Data Loss Prevention rules currently in effect.",
+    icon: FileSearch,
+  },
+  {
+    title: "CEP subscription",
+    body: "Check the org's Chrome Enterprise Premium subscription.",
+    icon: Scale,
   },
 ];
 
@@ -114,7 +127,7 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
   }, [messages, onToolInvocation]);
 
   const handleSend = (text: string) => {
-    if (!text.trim() || !selectedUser) return;
+    if (!text.trim()) return;
     sendMessage({ text });
     setInput("");
     setIsPinnedToBottom(true);
@@ -133,35 +146,16 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
       lastMsg.role !== "assistant" ||
       lastMsg.parts.every((p) => p.type !== "text" || !p.text));
 
+  const prompts = selectedUser ? SUGGESTED_WITH_USER : SUGGESTED_WITHOUT_USER;
+
   return (
     <div className="bg-surface-dim flex flex-1 flex-col">
-      {selectedUser && (
-        <div className="bg-surface border-on-surface/10 flex h-9 items-center gap-2 border-b px-5">
-          <span className="text-on-surface-muted text-[0.6875rem]">Viewing</span>
-          <span className="font-mono text-[0.75rem] tracking-tight">{selectedUser}</span>
-          <span className="ml-auto flex items-center gap-1.5">
-            <span
-              className={`size-1.5 rounded-full ${isStreaming ? "bg-primary pulse-dot" : "bg-success"}`}
-              aria-hidden="true"
-            />
-            <span className="text-on-surface-variant text-[0.6875rem]">
-              {isStreaming ? "Thinking" : "Ready"}
-            </span>
-          </span>
-        </div>
-      )}
-
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6">
-          {isEmpty && selectedUser ? (
-            <BriefingEmptyState
-              selectedUser={selectedUser}
-              onPick={(prompt) => handleSend(prompt)}
-            />
-          ) : isEmpty ? (
-            <DeskEmptyState />
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-8">
+          {isEmpty ? (
+            <EmptyState selectedUser={selectedUser} prompts={prompts} onPick={handleSend} />
           ) : (
-            <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+            <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
               {messages.map((msg) => (
                 <ChatMessage key={msg.id} message={msg} />
               ))}
@@ -170,7 +164,7 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
           )}
 
           {error && (
-            <div className="bg-error-light text-error ring-error/20 mx-auto mt-4 max-w-3xl rounded-[var(--radius-sm)] px-3 py-2 text-xs ring-1">
+            <div className="bg-error-light text-error ring-error/20 mx-auto mt-4 max-w-3xl rounded-[var(--radius-sm)] px-3 py-2 text-sm ring-1">
               {error.message}
             </div>
           )}
@@ -182,9 +176,9 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
           <button
             type="button"
             onClick={scrollToBottom}
-            className="bg-surface text-on-surface-variant ring-on-surface/15 hover:bg-surface-container fade-in absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full px-3 py-1.5 text-[0.6875rem] font-medium shadow-[var(--shadow-elevation-2)] ring-1"
+            className="bg-surface text-on-surface-variant ring-on-surface/15 hover:bg-surface-container fade-in absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shadow-[var(--shadow-elevation-2)] ring-1"
           >
-            <ArrowDown className="size-3" />
+            <ArrowDown className="size-3.5" />
             <span>Jump to latest</span>
           </button>
         )}
@@ -196,7 +190,7 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
         onSubmit={handleSubmit}
         isStreaming={isStreaming}
         onStop={stop}
-        disabled={!selectedUser}
+        selectedUser={selectedUser}
       />
     </div>
   );
@@ -214,68 +208,53 @@ function TypingIndicator() {
   );
 }
 
-function DeskEmptyState() {
-  return (
-    <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center gap-3 text-center">
-      <h1 className="slide-up text-on-surface text-[1.5rem] leading-8 font-medium tracking-tight text-balance">
-        Pick a user to start an investigation.
-      </h1>
-      <p className="text-on-surface-variant slide-up stagger-1 text-[0.8125rem] leading-5 text-balance">
-        Search the directory on the left — users with recent Chrome audit activity are surfaced at
-        the top.
-      </p>
-      <div className="text-on-surface-muted slide-up stagger-2 flex items-center gap-2 text-xs">
-        <kbd className="bg-surface ring-on-surface/10 rounded-[var(--radius-xs)] px-1.5 py-0.5 font-mono text-[0.625rem] ring-1">
-          /
-        </kbd>
-        <span>to focus search</span>
-      </div>
-    </div>
-  );
-}
-
-function BriefingEmptyState({
+function EmptyState({
   selectedUser,
+  prompts,
   onPick,
 }: {
   selectedUser: string;
+  prompts: SuggestedPrompt[];
   onPick: (prompt: string) => void;
 }) {
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <div className="fade-in flex flex-col gap-1">
-        <h2 className="text-on-surface text-[1.25rem] leading-7 font-medium tracking-tight">
-          Ask about{" "}
-          <span className="text-primary font-mono text-[1.0625rem] tracking-tight">
-            {selectedUser}
-          </span>
+    <div className="mx-auto flex max-w-2xl flex-col gap-8 pt-6">
+      <div className="fade-in flex flex-col gap-1.5">
+        <h2 className="text-on-surface text-2xl leading-8 font-medium tracking-tight">
+          {selectedUser ? (
+            <>
+              Investigate{" "}
+              <span className="text-primary font-mono text-xl tracking-tight">{selectedUser}</span>
+            </>
+          ) : (
+            "What would you like to check?"
+          )}
         </h2>
-        <p className="text-on-surface-variant text-[0.8125rem] leading-5">
-          The agent has Chrome Enterprise Premium tools wired up via MCP — audit logs, license
-          state, DLP policy, and environment diagnostics.
+        <p className="text-on-surface-variant text-sm leading-5">
+          {selectedUser
+            ? "Ask anything — the agent can pull audit events, license state, DLP policy, and diagnostics for this user."
+            : "Ask anything about your Chrome Enterprise Premium environment. Pick a user from the left to scope questions to them."}
         </p>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <h3 className="section-label">Suggested</h3>
+      <div className="flex flex-col gap-2.5">
+        <h3 className="text-on-surface-variant text-xs font-medium">Suggested</h3>
         <ul role="list" className="grid gap-2 sm:grid-cols-2">
-          {SUGGESTED_PROMPTS.map((prompt, i) => (
+          {prompts.map((prompt, i) => (
             <li key={prompt.title} className={i === 2 ? "sm:col-span-2" : undefined}>
               <button
                 type="button"
                 onClick={() => onPick(prompt.body)}
-                className={`surface-raised group slide-up stagger-${i + 1} relative flex h-full w-full flex-col gap-2 rounded-[var(--radius-sm)] p-3 text-left`}
+                className={`surface-raised group slide-up stagger-${i + 1} flex h-full w-full flex-col gap-2 rounded-[var(--radius-sm)] p-3.5 text-left`}
               >
-                <div className="flex items-center gap-2">
-                  <span className="bg-primary-light text-primary grid size-7 place-items-center rounded-[var(--radius-xs)]">
+                <div className="flex items-center gap-2.5">
+                  <span className="bg-primary-light text-primary grid size-7 shrink-0 place-items-center rounded-[var(--radius-xs)]">
                     <prompt.icon className="size-3.5" />
                   </span>
-                  <span className="text-on-surface text-[0.8125rem] font-semibold">
-                    {prompt.title}
-                  </span>
-                  <ArrowUpRight className="text-on-surface-muted ml-auto size-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                  <span className="text-on-surface flex-1 text-sm font-medium">{prompt.title}</span>
+                  <ArrowUpRight className="text-on-surface-muted size-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                 </div>
-                <p className="text-on-surface-variant pl-9 text-[0.75rem] leading-4">
+                <p className="text-on-surface-variant pl-[calc(--spacing(7)+--spacing(2.5))] text-[0.8125rem] leading-5">
                   {prompt.body}
                 </p>
               </button>
