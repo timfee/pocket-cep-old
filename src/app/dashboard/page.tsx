@@ -150,7 +150,11 @@ export default function DashboardPage() {
             />
           </div>
 
-          <ChatPanel selectedUser={selectedUser} onToolInvocation={handleToolInvocation} />
+          <ChatPanel
+            selectedUser={selectedUser}
+            onToolInvocation={handleToolInvocation}
+            onClearSelectedUser={() => setSelectedUser("")}
+          />
         </div>
 
         <InspectorPanel

@@ -28,6 +28,7 @@ import type { Prompt } from "@modelcontextprotocol/sdk/types.js";
 type ChatPanelProps = {
   selectedUser: string;
   onToolInvocation?: (invocation: InvocationPart) => void;
+  onClearSelectedUser?: () => void;
 };
 
 /**
@@ -72,7 +73,7 @@ function PromptBadge({ name, prominent = false }: { name: string; prominent?: bo
   );
 }
 
-export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
+export function ChatPanel({ selectedUser, onToolInvocation, onClearSelectedUser }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [promptExpanding, setPromptExpanding] = useState<string | null>(null);
@@ -262,6 +263,7 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
         isStreaming={isStreaming}
         onStop={stop}
         selectedUser={selectedUser}
+        onClearSelectedUser={onClearSelectedUser}
       />
     </div>
   );

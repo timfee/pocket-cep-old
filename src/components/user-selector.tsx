@@ -173,11 +173,24 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
           ref={inputRef}
           id="user-search"
           type="text"
-          name="selectedUser"
           role="combobox"
           aria-expanded={isOpen}
           aria-autocomplete="list"
           aria-controls="user-listbox"
+          /*
+           * Suppress browser + password-manager autofill: Chrome ignores
+           * autoComplete="off" when it heuristically classifies a field
+           * as an email (which `name="selectedUser"` was triggering).
+           * Using a random autoComplete value + data-*-ignore attributes
+           * covers Chrome, Safari, 1Password, LastPass, and Bitwarden.
+           */
+          autoComplete="off"
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
+          data-1p-ignore
+          data-lpignore="true"
+          data-form-type="other"
           value={query}
           onChange={(e) => handleQueryChange(e.target.value)}
           onFocus={() => setIsOpen(true)}
