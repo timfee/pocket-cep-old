@@ -17,6 +17,7 @@ import { getEnv } from "@/lib/env";
 import { getMcpToolsForAiSdk } from "@/lib/mcp-tools";
 import { buildSystemPrompt, LOG_TAGS, DEFAULT_MODELS, MAX_AGENT_ITERATIONS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
+import { isAuthError } from "@/lib/auth-errors";
 
 export async function POST(request: Request) {
   const auth = getAuth();
@@ -51,6 +52,12 @@ export async function POST(request: Request) {
   try {
     tools = await getMcpToolsForAiSdk(config.MCP_SERVER_URL, accessToken);
   } catch (error) {
+    if (isAuthError(error)) {
+      return new Response(JSON.stringify({ error: error.toPayload() }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return new Response(JSON.stringify({ error: getErrorMessage(error) }), {
       status: 502,
       headers: { "Content-Type": "application/json" },
