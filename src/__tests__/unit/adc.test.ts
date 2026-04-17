@@ -73,4 +73,17 @@ describe("getADCToken", () => {
       return isAuthError(err) && (err as AuthError).code === "unknown_auth";
     });
   });
+
+  it("re-throws an already-classified AuthError as the same instance", async () => {
+    const original = new AuthError({
+      code: "invalid_grant",
+      source: "adc",
+      message: "Token has been expired or revoked.",
+      remedy: "Run `gcloud auth application-default login` to re-authenticate.",
+      command: "gcloud auth application-default login",
+    });
+    mockGetAccessToken.mockRejectedValue(original);
+
+    await expect(getADCToken()).rejects.toBe(original);
+  });
 });

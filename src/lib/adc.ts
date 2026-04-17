@@ -8,7 +8,7 @@
  */
 
 import { LOG_TAGS } from "./constants";
-import { AuthError, toAuthError } from "./auth-errors";
+import { AuthError, isAuthError, toAuthError } from "./auth-errors";
 
 /**
  * Fetches an access token from Application Default Credentials.
@@ -38,6 +38,7 @@ export async function getADCToken(): Promise<string> {
 
     return tokenResponse.token;
   } catch (error) {
+    if (isAuthError(error)) throw error;
     const classified = toAuthError(error, "adc");
     if (classified) {
       console.error(
@@ -65,8 +66,12 @@ export async function getQuotaProject(): Promise<string | null> {
     const { join } = await import("path");
     const { homedir } = await import("os");
     const credPath = join(homedir(), ".config", "gcloud", "application_default_credentials.json");
-    const creds = JSON.parse(readFileSync(credPath, "utf-8")) as { quota_project_id?: string };
-    return creds.quota_project_id ?? null;
+    const raw: unknown = JSON.parse(readFileSync(credPath, "utf-8"));
+    if (raw && typeof raw === "object" && "quota_project_id" in raw) {
+      const value = (raw as { quota_project_id?: unknown }).quota_project_id;
+      return typeof value === "string" ? value : null;
+    }
+    return null;
   } catch {
     return null;
   }
