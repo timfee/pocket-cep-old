@@ -16,6 +16,7 @@ import { InspectorPanel } from "@/components/inspector-panel";
 import { ActivityRoster } from "@/components/activity-roster";
 import type { InvocationPart } from "@/lib/tool-part";
 import type { UserActivity } from "@/app/api/users/activity/route";
+import { ACTIVITY_CACHE_KEY, USER_SEARCH_INPUT_ID } from "@/lib/constants";
 import { Wrench, Eraser } from "lucide-react";
 
 export default function DashboardPage() {
@@ -52,7 +53,7 @@ export default function DashboardPage() {
     let cancelled = false;
 
     try {
-      const cached = sessionStorage.getItem("cep_activity_cache");
+      const cached = sessionStorage.getItem(ACTIVITY_CACHE_KEY);
       if (cached) {
         /**
          * Read-through cache: we mirror sessionStorage into React state
@@ -78,7 +79,7 @@ export default function DashboardPage() {
         setActivity(fetchedActivity);
         setIsActivityLoading(false);
         try {
-          sessionStorage.setItem("cep_activity_cache", JSON.stringify(fetchedActivity));
+          sessionStorage.setItem(ACTIVITY_CACHE_KEY, JSON.stringify(fetchedActivity));
         } catch {
           // ignore
         }
@@ -107,7 +108,7 @@ export default function DashboardPage() {
       ) {
         return;
       }
-      const search = document.getElementById("user-search");
+      const search = document.getElementById(USER_SEARCH_INPUT_ID);
       if (search instanceof HTMLInputElement) {
         e.preventDefault();
         search.focus();

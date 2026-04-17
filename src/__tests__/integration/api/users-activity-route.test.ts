@@ -39,10 +39,16 @@ vi.mock("@/lib/env", () => ({
   getEnv: mockGetEnv,
 }));
 
-vi.mock("@/lib/adc", () => ({
-  getADCToken: mockGetADCToken,
-  getQuotaProject: mockGetQuotaProject,
-}));
+// Keep the real `buildGoogleApiHeaders` so the route's header construction
+// runs end-to-end; only mock the credential accessors.
+vi.mock("@/lib/adc", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/adc")>("@/lib/adc");
+  return {
+    ...actual,
+    getADCToken: mockGetADCToken,
+    getQuotaProject: mockGetQuotaProject,
+  };
+});
 
 import { GET } from "@/app/api/users/activity/route";
 import { AuthError } from "@/lib/auth-errors";

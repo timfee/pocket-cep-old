@@ -8,32 +8,19 @@
  *                      a single user turn.
  */
 
-import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
-import { headers } from "next/headers";
 import type { Prompt, PromptMessage } from "@modelcontextprotocol/sdk/types.js";
-import { getAuth } from "@/lib/auth";
 import { getGoogleAccessToken } from "@/lib/access-token";
 import { getEnv } from "@/lib/env";
 import { getMcpPrompt, listMcpPrompts } from "@/lib/mcp-client";
+import { buildCallerCacheKey } from "@/lib/cache-key";
+import { requireSession } from "@/lib/session";
 import { LOG_TAGS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 
 const CATALOG_TTL_MS = 5 * 60 * 1000;
 
 const promptCatalogCache = new Map<string, { data: Prompt[]; expiresAt: number }>();
-
-function cacheKey(serverUrl: string, accessToken: string | undefined): string {
-  if (!accessToken) return `${serverUrl}|sa`;
-  const hash = createHash("sha256").update(accessToken).digest("hex").slice(0, 16);
-  return `${serverUrl}|u:${hash}`;
-}
-
-async function requireSession() {
-  const auth = getAuth();
-  const session = await auth.api.getSession({ headers: await headers() });
-  return session;
-}
 
 export async function GET() {
   if (!(await requireSession())) {
@@ -43,7 +30,7 @@ export async function GET() {
   const config = getEnv();
   const accessToken = await getGoogleAccessToken();
 
-  const key = cacheKey(config.MCP_SERVER_URL, accessToken);
+  const key = buildCallerCacheKey(config.MCP_SERVER_URL, accessToken);
   const now = Date.now();
   const cached = promptCatalogCache.get(key);
   if (cached && cached.expiresAt > now) {

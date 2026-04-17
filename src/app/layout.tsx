@@ -11,6 +11,9 @@ import type { Metadata } from "next";
 import { Roboto, Roboto_Mono } from "next/font/google";
 import { AuthHealthProvider } from "@/components/auth-health-provider";
 import { AuthBanner } from "@/components/auth-banner";
+import { ModeProvider } from "@/components/mode-provider";
+import { getEnv } from "@/lib/env";
+import { DEFAULT_MODELS } from "@/lib/constants";
 import "./globals.css";
 
 /**
@@ -44,13 +47,27 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  /**
+   * Read the validated env on the server and forward the non-secret
+   * flavor fields to the client `ModeProvider`. Passing through layout
+   * props avoids a round-trip API call just to show badges.
+   */
+  const env = getEnv();
+  const mode = {
+    authMode: env.AUTH_MODE,
+    llmProvider: env.LLM_PROVIDER,
+    llmModel: env.LLM_MODEL || DEFAULT_MODELS[env.LLM_PROVIDER],
+  };
+
   return (
     <html lang="en" className={`${roboto.variable} ${robotoMono.variable} h-full`}>
       <body className="flex min-h-dvh flex-col antialiased">
-        <AuthHealthProvider>
-          <AuthBanner />
-          {children}
-        </AuthHealthProvider>
+        <ModeProvider value={mode}>
+          <AuthHealthProvider>
+            <AuthBanner />
+            {children}
+          </AuthHealthProvider>
+        </ModeProvider>
       </body>
     </html>
   );

@@ -96,6 +96,24 @@ export function isAuthError(err: unknown): err is AuthError {
   );
 }
 
+/**
+ * Runtime guard for the `AuthErrorPayload` wire shape. Used by the
+ * client fetch wrapper, the banner, and tool-error cards to validate
+ * values that have crossed a JSON boundary (where compile-time types
+ * are erased). Kept alongside `AuthError` so every consumer reaches for
+ * the same canonical check.
+ */
+export function isAuthErrorPayload(value: unknown): value is AuthErrorPayload {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Partial<AuthErrorPayload>;
+  return (
+    typeof v.code === "string" &&
+    typeof v.source === "string" &&
+    typeof v.remedy === "string" &&
+    typeof v.message === "string"
+  );
+}
+
 type GoogleOAuthBody = {
   error?: string;
   error_description?: string;

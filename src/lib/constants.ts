@@ -15,6 +15,21 @@
 export const SA_EMAIL_DOMAIN = "service-account.local";
 
 /**
+ * DOM id for the header's user-search input. Referenced from the app
+ * bar (focus button), dashboard (`/` keyboard shortcut), and the
+ * selector itself. Centralising the string keeps the three callers in
+ * lockstep when the markup moves.
+ */
+export const USER_SEARCH_INPUT_ID = "user-search";
+
+/**
+ * sessionStorage key for the cached activity map. The dashboard writes
+ * here on first fetch and reads back on subsequent mounts so tab
+ * navigation doesn't re-hit the Admin Reports API.
+ */
+export const ACTIVITY_CACHE_KEY = "cep_activity_cache";
+
+/**
  * Structured log prefixes for each subsystem. These make it easy to
  * filter server logs by component (e.g. `grep "\[mcp\]"`).
  */

@@ -4,7 +4,7 @@
 
 import { getErrorMessage } from "./errors";
 import { LOG_TAGS } from "./constants";
-import { getADCToken, getQuotaProject } from "./adc";
+import { getADCToken, buildGoogleApiHeaders } from "./adc";
 import { isAuthError, toAuthError } from "./auth-errors";
 
 /**
@@ -58,21 +58,7 @@ export async function searchUsers(
   const token = accessToken ?? (await getADCToken());
 
   try {
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${token}`,
-    };
-
-    /**
-     * Quota project header is only needed for ADC — user OAuth tokens
-     * carry their own project context. Reads from the ADC credentials
-     * file or GOOGLE_CLOUD_QUOTA_PROJECT env var.
-     */
-    if (!accessToken) {
-      const quotaProject = await getQuotaProject();
-      if (quotaProject) {
-        headers["x-goog-user-project"] = quotaProject;
-      }
-    }
+    const headers = await buildGoogleApiHeaders(token, !accessToken);
 
     const response = await fetch(url, {
       headers,

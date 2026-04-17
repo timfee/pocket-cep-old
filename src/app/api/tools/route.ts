@@ -19,11 +19,10 @@
  */
 
 import { NextResponse } from "next/server";
-import { headers } from "next/headers";
-import { getAuth } from "@/lib/auth";
 import { listMcpTools } from "@/lib/mcp-client";
 import { getGoogleAccessToken } from "@/lib/access-token";
 import { getEnv } from "@/lib/env";
+import { requireSession } from "@/lib/session";
 import { LOG_TAGS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -32,10 +31,7 @@ import { getErrorMessage } from "@/lib/errors";
  * Requires an authenticated session; returns 401 otherwise.
  */
 export async function GET() {
-  const auth = getAuth();
-  const session = await auth.api.getSession({ headers: await headers() });
-
-  if (!session) {
+  if (!(await requireSession())) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 

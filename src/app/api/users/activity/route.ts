@@ -14,20 +14,25 @@
  * empty activity.
  */
 
-import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
-import { headers } from "next/headers";
-import { getAuth } from "@/lib/auth";
 import { getGoogleAccessToken } from "@/lib/access-token";
 import { getEnv } from "@/lib/env";
-import { getADCToken, getQuotaProject } from "@/lib/adc";
+import { getADCToken, buildGoogleApiHeaders } from "@/lib/adc";
 import { isAuthError, toAuthError } from "@/lib/auth-errors";
+import { buildCallerCacheKey } from "@/lib/cache-key";
+import { requireSession } from "@/lib/session";
 import { LOG_TAGS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 
 const ACTIVITY_TTL_MS = 10 * 60 * 1000;
-const ACTIVITY_MAX_EVENTS = 1000;
-const ACTIVITY_PAGE_SIZE = 1000;
+
+/**
+ * Cap on total events fetched per cache refresh. The sidebar only shows
+ * the top few users, so 250 events is plenty to rank them — larger caps
+ * just burned quota on the cold-cache path without changing the UI.
+ */
+const ACTIVITY_MAX_EVENTS = 250;
+const ACTIVITY_PAGE_SIZE = 250;
 
 /**
  * Per-user activity summary: event count and most recent event timestamp.
@@ -39,16 +44,8 @@ export type UserActivity = {
 
 const activityCache = new Map<string, { data: Record<string, UserActivity>; expiresAt: number }>();
 
-function cacheKey(serverUrl: string, accessToken: string | undefined): string {
-  if (!accessToken) return `${serverUrl}|sa`;
-  const hash = createHash("sha256").update(accessToken).digest("hex").slice(0, 16);
-  return `${serverUrl}|u:${hash}`;
-}
-
 export async function GET() {
-  const auth = getAuth();
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
+  if (!(await requireSession())) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
@@ -63,30 +60,21 @@ export async function GET() {
      */
     const tokenToUse = accessToken ?? (await getADCToken());
 
-    const key = cacheKey(config.MCP_SERVER_URL, tokenToUse);
+    const key = buildCallerCacheKey(config.MCP_SERVER_URL, tokenToUse);
     const now = Date.now();
     const cached = activityCache.get(key);
     if (cached && cached.expiresAt > now) {
       return NextResponse.json({ activity: cached.data });
     }
 
-    const requestHeaders: Record<string, string> = {
-      Authorization: `Bearer ${tokenToUse}`,
-    };
-
-    if (!accessToken) {
-      const quotaProject = await getQuotaProject();
-      if (quotaProject) {
-        requestHeaders["x-goog-user-project"] = quotaProject;
-      }
-    }
+    const requestHeaders = await buildGoogleApiHeaders(tokenToUse, !accessToken);
 
     const baseUrl = new URL(
       "https://admin.googleapis.com/admin/reports/v1/activity/users/all/applications/chrome",
     );
     baseUrl.searchParams.set("customerId", "my_customer");
 
-    let activities: RawActivity[] = [];
+    const activities: RawActivity[] = [];
     let pageToken: string | undefined;
 
     do {
@@ -121,7 +109,7 @@ export async function GET() {
         items?: RawActivity[];
         nextPageToken?: string;
       };
-      activities = activities.concat(data.items ?? []);
+      if (data.items?.length) activities.push(...data.items);
       pageToken = data.nextPageToken;
     } while (pageToken && activities.length < ACTIVITY_MAX_EVENTS);
 

@@ -13,7 +13,7 @@ import { isToolUIPart, getToolName } from "ai";
 import type { UIMessage } from "ai";
 import { toolPartLabel, type InvocationPart } from "@/lib/tool-part";
 import { reportAuthErrorGlobally } from "@/lib/auth-aware-fetch";
-import type { AuthErrorPayload } from "@/lib/auth-errors";
+import { isAuthErrorPayload, type AuthErrorPayload } from "@/lib/auth-errors";
 
 type ChatMessageProps = {
   message: UIMessage;
@@ -171,29 +171,19 @@ function ToolPartCard({ part }: { part: InvocationPart }) {
 }
 
 /**
- * Runtime detection of the AuthErrorPayload wire shape inside a tool
- * part's errorText. The AI SDK serializes thrown errors' messages, so
- * AuthError's JSON-stringified payload arrives as a plain string — we
- * parse it here to render an actionable card.
+ * Detects an AuthErrorPayload inside a tool part's errorText. The AI SDK
+ * serializes thrown errors' messages, so AuthError's JSON-stringified
+ * payload arrives as a plain string — we parse and run the canonical
+ * guard so every surface accepts the same shape.
  */
 function parseAuthPayload(errorText: unknown): AuthErrorPayload | null {
   if (typeof errorText !== "string") return null;
   try {
     const parsed: unknown = JSON.parse(errorText);
-    if (
-      parsed &&
-      typeof parsed === "object" &&
-      "code" in parsed &&
-      typeof (parsed as { code: unknown }).code === "string" &&
-      "remedy" in parsed &&
-      typeof (parsed as { remedy: unknown }).remedy === "string"
-    ) {
-      return parsed as AuthErrorPayload;
-    }
+    return isAuthErrorPayload(parsed) ? parsed : null;
   } catch {
-    // Not JSON — fall through and let the generic card handle it.
+    return null;
   }
-  return null;
 }
 
 /**

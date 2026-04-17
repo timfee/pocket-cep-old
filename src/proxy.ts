@@ -1,8 +1,10 @@
 /**
- * @file Mode-aware route protection (Next.js middleware).
+ * @file Mode-aware route protection (Next.js 16 proxy).
  *
- * This file is imported by the top-level middleware.ts and runs on
- * every matched request before the page component renders.
+ * Next.js 16 renamed the `middleware.ts` convention to `proxy.ts` and
+ * the exported `middleware` function to `proxy`. Placing this file at
+ * `src/proxy.ts` (matching the `src` layout used elsewhere) is all
+ * Next.js needs — no explicit import is required.
  *
  * service_account mode: no login needed. Sessionless requests are
  * redirected to /api/auth/auto-session which mints a cookie
@@ -14,10 +16,10 @@
  * Authenticated users hitting "/" are redirected to /dashboard.
  *
  * The session check uses `getSessionCookie` (a cookie-name lookup)
- * rather than a full `getSession` API call. This keeps the middleware
+ * rather than a full `getSession` API call. This keeps the proxy
  * fast since it runs on every matched request. The trade-off is that
- * an expired or invalid cookie will pass the middleware but fail at
- * the API layer, which returns 401 and the frontend handles it.
+ * an expired or invalid cookie will pass the proxy but fail at the
+ * API layer, which returns 401 and the frontend handles it.
  *
  * The `config.matcher` limits this to "/" and "/dashboard/*" so API
  * routes, static assets, and _next/ paths are never intercepted.
@@ -28,7 +30,7 @@ import { getSessionCookie } from "better-auth/cookies";
 import { getEnv } from "@/lib/env";
 
 /**
- * Route-protection middleware. Redirects users based on auth mode and
+ * Route-protection proxy. Redirects users based on auth mode and
  * session state. Returns NextResponse.next() to allow the request
  * through when no redirect is needed.
  */
@@ -59,9 +61,9 @@ export async function proxy(request: NextRequest) {
 }
 
 /**
- * Next.js middleware matcher. Only intercepts the landing page and
+ * Next.js proxy matcher. Only intercepts the landing page and
  * dashboard routes -- API routes and static files are excluded so they
- * are not slowed down by the middleware.
+ * are not slowed down by the proxy.
  */
 export const config = {
   matcher: ["/", "/dashboard/:path*"],

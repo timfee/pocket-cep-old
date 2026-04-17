@@ -12,7 +12,7 @@
  * SDK's tool channel.
  */
 
-import type { AuthErrorPayload } from "./auth-errors";
+import { isAuthErrorPayload, type AuthErrorPayload } from "./auth-errors";
 
 /**
  * Name of the window-scoped custom event carrying an AuthErrorPayload.
@@ -54,18 +54,4 @@ export async function authAwareFetch(
   }
 
   return response;
-}
-
-/**
- * Runtime check for the AuthErrorPayload wire shape. Defensive because
- * the value crosses a JSON boundary where the compile-time type is lost.
- */
-function isAuthErrorPayload(value: unknown): value is AuthErrorPayload {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as AuthErrorPayload).code === "string" &&
-    typeof (value as AuthErrorPayload).source === "string" &&
-    typeof (value as AuthErrorPayload).remedy === "string"
-  );
 }

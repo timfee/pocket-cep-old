@@ -11,10 +11,9 @@
  */
 
 import { NextResponse } from "next/server";
-import { headers } from "next/headers";
-import { getAuth } from "@/lib/auth";
 import { getADCToken } from "@/lib/adc";
 import { isAuthError } from "@/lib/auth-errors";
+import { requireSession } from "@/lib/session";
 import { getErrorMessage } from "@/lib/errors";
 
 /**
@@ -22,10 +21,7 @@ import { getErrorMessage } from "@/lib/errors";
  * issues one and 401 with the structured payload if it refuses.
  */
 export async function GET() {
-  const auth = getAuth();
-  const session = await auth.api.getSession({ headers: await headers() });
-
-  if (!session) {
+  if (!(await requireSession())) {
     return NextResponse.json({ ok: false, error: "Not authenticated" }, { status: 401 });
   }
 

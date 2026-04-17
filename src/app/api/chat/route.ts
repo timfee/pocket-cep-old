@@ -10,20 +10,16 @@ import { streamText, convertToModelMessages, stepCountIs } from "ai";
 import type { UIMessage } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
-import { headers } from "next/headers";
-import { getAuth } from "@/lib/auth";
 import { getGoogleAccessToken } from "@/lib/access-token";
 import { getEnv } from "@/lib/env";
 import { getMcpToolsForAiSdk } from "@/lib/mcp-tools";
+import { requireSession } from "@/lib/session";
 import { buildSystemPrompt, LOG_TAGS, DEFAULT_MODELS, MAX_AGENT_ITERATIONS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 import { isAuthError } from "@/lib/auth-errors";
 
 export async function POST(request: Request) {
-  const auth = getAuth();
-  const session = await auth.api.getSession({ headers: await headers() });
-
-  if (!session) {
+  if (!(await requireSession())) {
     return new Response(JSON.stringify({ error: "Not authenticated" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },

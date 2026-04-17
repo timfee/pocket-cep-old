@@ -10,11 +10,10 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { headers } from "next/headers";
-import { getAuth } from "@/lib/auth";
 import { getGoogleAccessToken } from "@/lib/access-token";
 import { searchUsers, buildAdminQuery, type DirectoryUser } from "@/lib/admin-sdk";
 import { isAuthError } from "@/lib/auth-errors";
+import { requireSession } from "@/lib/session";
 import { getErrorMessage } from "@/lib/errors";
 
 export type { DirectoryUser };
@@ -24,10 +23,7 @@ export type { DirectoryUser };
  * is passed to the Admin SDK as a server-side filter.
  */
 export async function GET(request: NextRequest) {
-  const auth = getAuth();
-  const session = await auth.api.getSession({ headers: await headers() });
-
-  if (!session) {
+  if (!(await requireSession())) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 

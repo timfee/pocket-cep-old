@@ -6,7 +6,8 @@
 
 import { Command } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
-import { SA_EMAIL_DOMAIN } from "@/lib/constants";
+import { SA_EMAIL_DOMAIN, USER_SEARCH_INPUT_ID } from "@/lib/constants";
+import { ModeBadges } from "@/components/mode-badges";
 
 export function AppBar() {
   const session = authClient.useSession();
@@ -38,7 +39,7 @@ export function AppBar() {
         <button
           type="button"
           onClick={() => {
-            const el = document.getElementById("user-search");
+            const el = document.getElementById(USER_SEARCH_INPUT_ID);
             if (el instanceof HTMLInputElement) el.focus();
           }}
           className="bg-surface-dim ring-on-surface/10 hover:bg-surface-container group relative hidden h-8 min-w-[280px] items-center gap-2 rounded-[var(--radius-sm)] px-3 text-left text-xs ring-1 md:flex"
@@ -52,6 +53,7 @@ export function AppBar() {
         </button>
 
         <div className="ml-auto flex items-center gap-3">
+          <ModeBadges />
           <SessionChip isAnonymous={!!isAnonymous} email={user?.email} onSignOut={handleSignOut} />
         </div>
       </div>

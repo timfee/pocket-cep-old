@@ -11,28 +11,16 @@
  * in case the CEP server's tool visibility diverges by scope.
  */
 
-import { createHash } from "node:crypto";
 import { dynamicTool, jsonSchema, type ToolSet } from "ai";
 import type { JSONSchema7 } from "@ai-sdk/provider";
 import { callMcpTool, listMcpTools, type McpToolDefinition } from "./mcp-client";
 import { toAuthError } from "./auth-errors";
+import { buildCallerCacheKey } from "./cache-key";
 import { LOG_TAGS } from "./constants";
 
 const TOOL_CATALOG_TTL_MS = 5 * 60 * 1000;
 
 const toolCatalogCache = new Map<string, { tools: McpToolDefinition[]; expiresAt: number }>();
-
-/**
- * Builds a cache key that isolates entries by (serverUrl, caller identity).
- * Service-account mode shares one entry (no token); user_oauth mode gets
- * a per-token entry keyed by a truncated SHA-256 so raw tokens never sit
- * in the Map.
- */
-function cacheKey(serverUrl: string, accessToken: string | undefined): string {
-  if (!accessToken) return `${serverUrl}|sa`;
-  const hash = createHash("sha256").update(accessToken).digest("hex").slice(0, 16);
-  return `${serverUrl}|u:${hash}`;
-}
 
 /**
  * Returns the MCP tool catalog, refreshing from the server at most once
@@ -42,7 +30,7 @@ async function getCachedToolCatalog(
   serverUrl: string,
   accessToken: string | undefined,
 ): Promise<McpToolDefinition[]> {
-  const key = cacheKey(serverUrl, accessToken);
+  const key = buildCallerCacheKey(serverUrl, accessToken);
   const now = Date.now();
   const cached = toolCatalogCache.get(key);
   if (cached && cached.expiresAt > now) return cached.tools;

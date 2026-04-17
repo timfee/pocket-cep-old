@@ -56,6 +56,27 @@ export async function getADCToken(): Promise<string> {
 }
 
 /**
+ * Builds the headers every Google REST call needs: Authorization plus,
+ * when the token came from ADC (not a user OAuth session), the
+ * `x-goog-user-project` header pinning quota+billing to the caller's
+ * project. User OAuth tokens carry their own project context, so we
+ * skip the quota header for them.
+ */
+export async function buildGoogleApiHeaders(
+  token: string,
+  isAdcToken: boolean,
+): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+  if (isAdcToken) {
+    const quotaProject = await getQuotaProject();
+    if (quotaProject) headers["x-goog-user-project"] = quotaProject;
+  }
+  return headers;
+}
+
+/**
  * Reads the quota_project_id from the ADC credentials file. Falls back
  * to GOOGLE_CLOUD_QUOTA_PROJECT. Returns null if neither is set — that
  * is a soft failure, not an auth failure.

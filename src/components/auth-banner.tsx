@@ -17,7 +17,7 @@
 import { useState } from "react";
 import { ShieldAlert, Copy, Check, RefreshCw } from "lucide-react";
 import { useAuthHealth } from "@/components/auth-health-provider";
-import type { AuthErrorPayload } from "@/lib/auth-errors";
+import { isAuthErrorPayload } from "@/lib/auth-errors";
 
 /**
  * Renders the banner only when the context holds an error. Keeping the
@@ -43,8 +43,8 @@ export function AuthBanner() {
         clear();
         return;
       }
-      if (body.error !== null && typeof body.error === "object" && "code" in body.error) {
-        report(body.error as AuthErrorPayload);
+      if (isAuthErrorPayload(body.error)) {
+        report(body.error);
       }
     } finally {
       setChecking(false);

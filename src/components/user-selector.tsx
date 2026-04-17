@@ -15,7 +15,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import { getErrorMessage } from "@/lib/errors";
 import { authAwareFetch } from "@/lib/auth-aware-fetch";
-import type { AuthErrorPayload } from "@/lib/auth-errors";
+import { isAuthErrorPayload, type AuthErrorPayload } from "@/lib/auth-errors";
+import { USER_SEARCH_INPUT_ID } from "@/lib/constants";
 import type { DirectoryUser } from "@/app/api/users/route";
 import type { UserActivity } from "@/app/api/users/activity/route";
 
@@ -62,7 +63,7 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
         const body = (await response.json().catch(() => ({}))) as {
           error?: string | AuthErrorPayload;
         };
-        if (response.status === 401 && isPayload(body.error)) {
+        if (response.status === 401 && isAuthErrorPayload(body.error)) {
           setAuthPayload(body.error);
           setError(body.error.remedy);
           setState("error");
@@ -72,10 +73,7 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
       }
 
       const body: unknown = await response.json();
-      const list =
-        body && typeof body === "object" && "users" in body && Array.isArray(body.users)
-          ? (body.users as DirectoryUser[])
-          : [];
+      const list = extractUserList(body);
 
       if (id !== requestIdRef.current) return;
 
@@ -157,20 +155,11 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
     });
   }, [users, activity, query]);
 
-  function isPayload(v: unknown): v is AuthErrorPayload {
-    return (
-      typeof v === "object" &&
-      v !== null &&
-      typeof (v as AuthErrorPayload).code === "string" &&
-      typeof (v as AuthErrorPayload).remedy === "string"
-    );
-  }
-
   const isCredentialError = authPayload !== null;
 
   return (
     <div className="relative flex flex-col gap-1.5">
-      <label htmlFor="user-search" className="text-on-surface text-sm font-medium">
+      <label htmlFor={USER_SEARCH_INPUT_ID} className="text-on-surface text-sm font-medium">
         Investigate user
       </label>
 
@@ -185,7 +174,7 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
 
         <input
           ref={inputRef}
-          id="user-search"
+          id={USER_SEARCH_INPUT_ID}
           type="text"
           role="combobox"
           aria-expanded={isOpen}
@@ -300,6 +289,21 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Narrows the `/api/users` response into a `DirectoryUser[]`. The payload
+ * crosses a JSON boundary, so we check the outer shape and each entry's
+ * required `email` + `name` fields rather than casting blind.
+ */
+function extractUserList(body: unknown): DirectoryUser[] {
+  if (!body || typeof body !== "object" || !("users" in body) || !Array.isArray(body.users)) {
+    return [];
+  }
+  return body.users.filter(
+    (u): u is DirectoryUser =>
+      !!u && typeof u === "object" && typeof u.email === "string" && typeof u.name === "string",
   );
 }
 
