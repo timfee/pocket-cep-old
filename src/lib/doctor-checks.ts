@@ -109,3 +109,29 @@ export async function probeGeminiKey(apiKey: string): Promise<CheckResult> {
     return { ok: false, message: `Google AI API probe failed — ${getErrorMessage(error)}` };
   }
 }
+
+/**
+ * Probes Google ADC by requesting an access token. Catches AuthError
+ * and returns its remedy so the doctor can tell the user exactly what
+ * to run — no more "ADC looks fine until the chat call fails".
+ */
+export async function probeAdcToken(): Promise<CheckResult> {
+  try {
+    const { getADCToken } = await import("./adc");
+    await getADCToken();
+    return { ok: true, message: "Google ADC token acquired" };
+  } catch (error) {
+    const { isAuthError } = await import("./auth-errors");
+    if (isAuthError(error)) {
+      const cmd = error.command ? ` (run: ${error.command})` : "";
+      return {
+        ok: false,
+        message: `Google ADC unavailable — ${error.remedy}${cmd}`,
+      };
+    }
+    return {
+      ok: false,
+      message: `Google ADC probe failed — ${getErrorMessage(error)}`,
+    };
+  }
+}

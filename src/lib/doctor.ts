@@ -24,6 +24,7 @@ import {
   probeMcpServer,
   probeAnthropicKey,
   probeGeminiKey,
+  probeAdcToken,
 } from "./doctor-checks";
 
 /**
@@ -128,6 +129,12 @@ async function main() {
   }
 
   console.log("\nRuntime checks:");
+
+  const adcResult = await probeAdcToken();
+  report(adcResult.ok, adcResult.message);
+  if (!adcResult.ok) {
+    console.log(`  ${WARN}   This only blocks ADC-backed calls (service_account mode).`);
+  }
 
   const mcpUrl = parseResult.success ? parseResult.data.MCP_SERVER_URL : env.MCP_SERVER_URL;
   if (mcpUrl) {
