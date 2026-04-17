@@ -10,7 +10,7 @@ admin chat assistant. Code should be well-documented and beginner-friendly.
 
 All code must be documented to help new engineers understand the codebase. Follow these requirements strictly.
 
-> **Note:** Oxlint validates JSDoc syntax but cannot enforce JSDoc presence (no `require-jsdoc` rule exists, and custom plugin comment APIs are not yet available). These standards are enforced through code review and AI agent instructions.
+> **Note:** ESLint doesn't enforce JSDoc presence in this project — the standards below are enforced through code review and AI agent instructions.
 
 ### File-Level Documentation
 
