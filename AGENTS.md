@@ -151,3 +151,14 @@ Write code that is **accessible, performant, type-safe, and maintainable**. Pref
 - Use `next/head` or App Router metadata API for head elements
 - Use Server Components for async data fetching instead of async Client Components
 - Use ref as a prop instead of `React.forwardRef`
+
+## Auth Error Contract
+
+All Google API failures (ADC, Admin SDK, MCP tool errors) flow through `src/lib/auth-errors.ts`. When you add a new Google-backed call:
+
+1. Let `AuthError` propagate from server-side helpers. Don't swallow it.
+2. In a route handler: catch with `isAuthError(err)` and return `NextResponse.json({ error: err.toPayload() }, { status: 401 })`.
+3. On the client: fetch through `authAwareFetch` so 401s light up the banner automatically.
+4. For new error shapes Google throws, extend `toAuthError()` rather than adding ad-hoc substring checks at call sites.
+
+Never add a `try/catch` that returns empty data on credential failure — that silently breaks the banner + doctor + chat card contract.

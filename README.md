@@ -264,6 +264,8 @@ pocket-cep/
 
     components/
       app-bar.tsx               # Top command bar (brand + /-hint + session chip)
+      auth-banner.tsx           # Sticky banner when ADC credentials need refresh
+      auth-health-provider.tsx  # Context + window-event listener for auth state
       user-selector.tsx         # Directory combobox with activity-weighted ranking
       activity-roster.tsx       # Sidebar "Recent activity" list
       chat-panel.tsx            # Chat host — useChat, scroll, empty states
@@ -279,7 +281,10 @@ pocket-cep/
       errors.ts                 # Shared error message extraction
       auth.ts                   # BetterAuth server config (stateless, no DB)
       auth-client.ts            # BetterAuth browser client
-      access-token.ts           # Google OAuth token retrieval
+      auth-errors.ts            # Typed AuthError + toAuthError classifier
+      auth-aware-fetch.ts       # fetch wrapper that dispatches auth-error events
+      access-token.ts           # Google OAuth token retrieval (user_oauth mode)
+      adc.ts                    # ADC token + quota-project helpers
       admin-sdk.ts              # Directory API REST wrapper
       cn.ts                     # clsx + tailwind-merge helper
       constants.ts              # System prompt, default models, log tags
@@ -287,7 +292,7 @@ pocket-cep/
       mcp-tools.ts              # AI SDK tool adapter + per-caller catalog cache
       tool-part.ts              # Shared ToolUIPart/DynamicToolUIPart type + label
       doctor.ts                 # Environment diagnostic script
-      doctor-checks.ts          # Shared probe helpers (MCP / Anthropic / Gemini)
+      doctor-checks.ts          # Shared probe helpers (ADC / MCP / Anthropic / Gemini)
 
     proxy.ts                    # Route protection (Next.js 16 proxy convention)
 
@@ -367,6 +372,18 @@ Runtime checks:
 
 Summary: 10/10 checks passed. All good!
 ```
+
+## When your Google session expires
+
+The app uses Google Application Default Credentials (ADC). If you see an amber "Re-authenticate with Google" banner at the top of the page, or `npm run doctor` reports `Google ADC unavailable`, your local gcloud session has expired (or was never set up). Run:
+
+```bash
+gcloud auth login
+```
+
+— or `gcloud auth application-default login` if ADC was never configured. Then click **Check again** in the banner. It clears when Google accepts the refreshed credentials.
+
+The banner is sticky on purpose. It only dismisses after a successful probe, so you always know whether auth is healthy.
 
 ## How It Works
 
