@@ -4,10 +4,9 @@
  * GET /api/users?q=alice → searches users by email/name
  * GET /api/users         → returns first 20 users
  *
- * Uses the Admin SDK REST API directly (not through MCP) because
- * the MCP server doesn't have a user directory tool. Supports
- * server-side query filtering so the combobox can search 10K+ orgs
- * without loading all users into the browser.
+ * Auth failures return HTTP 401 with an AuthErrorPayload so the client
+ * can render an actionable remedy instead of silently showing an empty
+ * dropdown.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -15,6 +14,8 @@ import { headers } from "next/headers";
 import { getAuth } from "@/lib/auth";
 import { getGoogleAccessToken } from "@/lib/access-token";
 import { searchUsers, buildAdminQuery, type DirectoryUser } from "@/lib/admin-sdk";
+import { isAuthError } from "@/lib/auth-errors";
+import { getErrorMessage } from "@/lib/errors";
 
 export type { DirectoryUser };
 
@@ -32,10 +33,15 @@ export async function GET(request: NextRequest) {
 
   const query = request.nextUrl.searchParams.get("q") ?? "";
   const accessToken = await getGoogleAccessToken();
-
   const adminQuery = buildAdminQuery(query);
 
-  const users = await searchUsers(adminQuery, accessToken);
-
-  return NextResponse.json({ users });
+  try {
+    const users = await searchUsers(adminQuery, accessToken);
+    return NextResponse.json({ users });
+  } catch (error) {
+    if (isAuthError(error)) {
+      return NextResponse.json({ error: error.toPayload() }, { status: 401 });
+    }
+    return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
+  }
 }
