@@ -112,11 +112,15 @@ export async function searchUsers(
 /**
  * Gets an access token from Application Default Credentials.
  */
-async function getADCToken(): Promise<string | null> {
+export async function getADCToken(): Promise<string | null> {
   try {
     const { GoogleAuth } = await import("google-auth-library");
     const auth = new GoogleAuth({
-      scopes: ["https://www.googleapis.com/auth/admin.directory.user.readonly"],
+      scopes: [
+        "https://www.googleapis.com/auth/admin.directory.user.readonly",
+        "https://www.googleapis.com/auth/admin.reports.usage.readonly",
+        "https://www.googleapis.com/auth/admin.reports.audit.readonly"
+      ],
     });
     const client = await auth.getClient();
     const tokenResponse = await client.getAccessToken();
@@ -131,7 +135,7 @@ async function getADCToken(): Promise<string | null> {
  * Reads the quota_project_id from the ADC credentials file.
  * Falls back to GOOGLE_CLOUD_QUOTA_PROJECT env var.
  */
-async function getQuotaProject(): Promise<string | null> {
+export async function getQuotaProject(): Promise<string | null> {
   if (process.env.GOOGLE_CLOUD_QUOTA_PROJECT) {
     return process.env.GOOGLE_CLOUD_QUOTA_PROJECT;
   }

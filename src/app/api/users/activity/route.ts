@@ -47,8 +47,19 @@ export async function GET() {
 
   const config = getEnv();
   const accessToken = await getGoogleAccessToken();
+  
+  // Use user's OAuth token or fallback to ADC for Service Account mode
+  let tokenToUse = accessToken;
+  if (!tokenToUse) {
+    const { getADCToken } = await import("@/lib/admin-sdk");
+    tokenToUse = (await getADCToken()) ?? undefined;
+  }
 
-  const key = cacheKey(config.MCP_SERVER_URL, accessToken);
+  if (!tokenToUse) {
+    return NextResponse.json({ activity: {} });
+  }
+
+  const key = cacheKey(config.MCP_SERVER_URL, tokenToUse);
   const now = Date.now();
   const cached = activityCache.get(key);
   if (cached && cached.expiresAt > now) {
@@ -56,20 +67,59 @@ export async function GET() {
   }
 
   try {
-    const result = await callMcpTool(
-      config.MCP_SERVER_URL,
-      "get_chrome_activity_log",
-      { userKey: "all", maxResults: ACTIVITY_MAX_EVENTS },
-      accessToken,
-    );
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${tokenToUse}`,
+    };
 
-    const activities = extractActivities(result.content);
+    if (!accessToken) {
+      const { getQuotaProject } = await import("@/lib/admin-sdk");
+      const quotaProject = await getQuotaProject();
+      if (quotaProject) {
+        headers["x-goog-user-project"] = quotaProject;
+      }
+    }
+
+    const baseUrl = new URL("https://admin.googleapis.com/admin/reports/v1/activity/users/all/applications/chrome");
+    // Provide a valid customer_id. 'my_customer' is a special alias for the authenticated customer.
+    baseUrl.searchParams.set("customerId", "my_customer");
+
+    let activities: RawActivity[] = [];
+    let pageToken: string | undefined;
+
+    do {
+      const remaining = ACTIVITY_MAX_EVENTS - activities.length;
+      const maxResults = Math.min(remaining, 1000);
+      
+      const url = new URL(baseUrl.toString());
+      url.searchParams.set("maxResults", String(maxResults));
+      if (pageToken) {
+        url.searchParams.set("pageToken", pageToken);
+      }
+
+      const response = await fetch(url.toString(), {
+        headers,
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      if (!response.ok) {
+        console.log(LOG_TAGS.MCP, "Activity fetch failed with status:", response.status, await response.text().catch(() => ""));
+        // Stop paginating on error, but keep any data we successfully fetched
+        break;
+      }
+
+      const data = await response.json();
+      activities = activities.concat(data.items || []);
+      pageToken = data.nextPageToken;
+
+    } while (pageToken && activities.length < ACTIVITY_MAX_EVENTS);
+
     const grouped = groupByUser(activities);
+    
     activityCache.set(key, { data: grouped, expiresAt: now + ACTIVITY_TTL_MS });
     return NextResponse.json({ activity: grouped });
   } catch (error) {
     /**
-     * Degrade silently — activity is a nice-to-have. If the MCP call
+     * Degrade silently — activity is a nice-to-have. If the call
      * fails (credentials, quota, etc.), the selector falls back to
      * plain directory search with no badges.
      */
@@ -78,35 +128,7 @@ export async function GET() {
   }
 }
 
-type RawActivity = { actor?: { email?: string }; id?: { time?: string } };
-
-/**
- * The MCP tool result is an array of content blocks; the useful data
- * is a JSON string inside a `type: "text"` block.
- */
-function extractActivities(content: unknown): RawActivity[] {
-  if (!Array.isArray(content)) return [];
-  for (const block of content) {
-    if (
-      block &&
-      typeof block === "object" &&
-      "type" in block &&
-      block.type === "text" &&
-      "text" in block &&
-      typeof block.text === "string"
-    ) {
-      try {
-        const parsed = JSON.parse(block.text);
-        if (parsed && Array.isArray(parsed.activities)) {
-          return parsed.activities as RawActivity[];
-        }
-      } catch {
-        // skip — block wasn't JSON
-      }
-    }
-  }
-  return [];
-}
+type RawActivity = { actor?: { email?: string; profileId?: string }; id?: { time?: string } };
 
 function groupByUser(activities: RawActivity[]): Record<string, UserActivity> {
   const map: Record<string, UserActivity> = {};
