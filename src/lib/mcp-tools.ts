@@ -15,6 +15,7 @@ import { createHash } from "node:crypto";
 import { dynamicTool, jsonSchema, type ToolSet } from "ai";
 import type { JSONSchema7 } from "@ai-sdk/provider";
 import { callMcpTool, listMcpTools, type McpToolDefinition } from "./mcp-client";
+import { toAuthError } from "./auth-errors";
 import { LOG_TAGS } from "./constants";
 
 const TOOL_CATALOG_TTL_MS = 5 * 60 * 1000;
@@ -90,10 +91,45 @@ export async function getMcpToolsForAiSdk(
           args as Record<string, unknown>,
           accessToken,
         );
+
+        /**
+         * Auth-shaped tool errors get promoted to thrown AuthError so the
+         * AI SDK surfaces them as `state: 'output-error'` with the
+         * structured payload. Non-auth errors pass through as content so
+         * the model can narrate them to the user.
+         */
+        if (result.isError) {
+          const text = extractErrorText(result.content);
+          const authErr = toAuthError(text, "mcp-tool");
+          if (authErr) throw authErr;
+        }
+
         return result.content;
       },
     });
   }
 
   return tools;
+}
+
+/**
+ * Pulls the first `type: "text"` block out of an MCP tool result's
+ * content array. The MCP server returns errors as text blocks, so this
+ * is the only shape we need to classify against.
+ */
+function extractErrorText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  for (const block of content) {
+    if (
+      block &&
+      typeof block === "object" &&
+      "type" in block &&
+      block.type === "text" &&
+      "text" in block &&
+      typeof block.text === "string"
+    ) {
+      return block.text;
+    }
+  }
+  return "";
 }
