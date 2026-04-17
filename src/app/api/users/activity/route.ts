@@ -16,6 +16,7 @@ import { getAuth } from "@/lib/auth";
 import { getGoogleAccessToken } from "@/lib/access-token";
 import { getEnv } from "@/lib/env";
 import { callMcpTool } from "@/lib/mcp-client";
+import { isAuthError } from "@/lib/auth-errors";
 import { LOG_TAGS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -68,10 +69,14 @@ export async function GET() {
     activityCache.set(key, { data: grouped, expiresAt: now + ACTIVITY_TTL_MS });
     return NextResponse.json({ activity: grouped });
   } catch (error) {
+    if (isAuthError(error)) {
+      return NextResponse.json({ error: error.toPayload() }, { status: 401 });
+    }
+
     /**
-     * Degrade silently — activity is a nice-to-have. If the MCP call
-     * fails (credentials, quota, etc.), the selector falls back to
-     * plain directory search with no badges.
+     * Auth errors are handled above. Non-auth failures (quota, transient
+     * 5xx) fall through to an empty map — the selector works fine
+     * without activity badges.
      */
     console.log(LOG_TAGS.MCP, "Activity fetch failed:", getErrorMessage(error));
     return NextResponse.json({ activity: {} });
