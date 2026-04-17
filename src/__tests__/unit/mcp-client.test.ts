@@ -91,15 +91,13 @@ describe("callMcpTool", () => {
     expect(result.rawResponse.result).toBeDefined();
   });
 
-  it("closes transport and client even when the tool call fails", async () => {
+  it("closes the client even when the tool call fails", async () => {
     mockCallTool.mockRejectedValue(new Error("Network error"));
 
     await expect(callMcpTool("http://localhost:3000/mcp", "broken_tool", {})).rejects.toThrow(
       "Network error",
     );
 
-    // Both should be closed in the finally block.
-    expect(mockTransportClose).toHaveBeenCalled();
     expect(mockClientClose).toHaveBeenCalled();
   });
 });

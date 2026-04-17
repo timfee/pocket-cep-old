@@ -120,7 +120,7 @@ export async function callMcpTool(
 
   console.log(LOG_TAGS.MCP, `Calling tool: ${toolName}`, JSON.stringify(args));
 
-  const { client, transport } = await connect(serverUrl, accessToken);
+  const { client } = await connect(serverUrl, accessToken);
 
   try {
     const result = await client.callTool({ name: toolName, arguments: args });
@@ -142,18 +142,14 @@ export async function callMcpTool(
       rawResponse,
     };
   } finally {
-    await transport.close();
     await client.close();
   }
 }
 
 /**
- * Lists all tools available on the MCP server. Used to populate the
- * LLM's tool definitions and the educational tools catalog.
- *
- * The result is cached in agent-loop.ts (not here) because caching
- * policy depends on auth mode — SA mode can cache globally, but
- * user_oauth mode needs per-user freshness.
+ * Lists all tools available on the MCP server, used to populate the
+ * LLM's tool definitions. Callers are expected to cache the result
+ * (see `getCachedToolCatalog` in `mcp-tools.ts`).
  */
 export async function listMcpTools(
   serverUrl: string,
@@ -161,7 +157,7 @@ export async function listMcpTools(
 ): Promise<McpToolDefinition[]> {
   console.log(LOG_TAGS.MCP, "Listing available tools...");
 
-  const { client, transport } = await connect(serverUrl, accessToken);
+  const { client } = await connect(serverUrl, accessToken);
 
   try {
     const result = await client.listTools();
@@ -177,7 +173,6 @@ export async function listMcpTools(
       },
     }));
   } finally {
-    await transport.close();
     await client.close();
   }
 }

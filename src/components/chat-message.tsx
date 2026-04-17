@@ -1,5 +1,8 @@
 /**
  * @file Chat message bubble rendering AI SDK v6 UIMessage parts.
+ *
+ * Tool parts in v6 are flat — no `toolInvocation` wrapper. See
+ * `src/lib/tool-part.ts` for the shared type and state→label helper.
  */
 
 "use client";
@@ -7,7 +10,9 @@
 import { useState } from "react";
 import { Bot, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { isToolUIPart, getToolName } from "ai";
 import type { UIMessage } from "ai";
+import { toolPartLabel, type InvocationPart } from "@/lib/tool-part";
 
 type ChatMessageProps = {
   message: UIMessage;
@@ -41,7 +46,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
             );
           }
 
-          if (part.type.startsWith("tool-")) {
+          if (isToolUIPart(part)) {
             return <ToolPartCard key={i} part={part} />;
           }
 
@@ -79,20 +84,16 @@ function CopyButton({ parts }: { parts: UIMessage["parts"] }) {
   );
 }
 
-function ToolPartCard({ part }: { part: Record<string, unknown> }) {
+function ToolPartCard({ part }: { part: InvocationPart }) {
   const [expanded, setExpanded] = useState(false);
 
-  const inv =
-    "toolInvocation" in part && part.toolInvocation && typeof part.toolInvocation === "object"
-      ? (part.toolInvocation as {
-          toolName: string;
-          args: unknown;
-          result?: unknown;
-          state: string;
-        })
-      : null;
-
-  if (!inv) return null;
+  const label = toolPartLabel(part.state);
+  const badgeClass =
+    label === "ERROR"
+      ? "bg-error/20 text-error"
+      : label === "DONE"
+        ? "bg-success/20 text-green-700"
+        : "bg-primary/20 text-primary";
 
   return (
     <div className="bg-surface-dim ring-on-surface/10 my-1 rounded-[var(--radius-sm)] ring-1">
@@ -102,15 +103,12 @@ function ToolPartCard({ part }: { part: Record<string, unknown> }) {
         className="flex w-full items-center gap-1.5 px-2.5 py-1 text-left"
       >
         <span className="text-on-surface-variant flex-1 truncate font-mono text-[11px]">
-          {inv.toolName}
+          {getToolName(part)}
         </span>
         <span
-          className={cn(
-            "rounded-[2px] px-1 py-0.5 font-mono text-[9px] font-semibold",
-            inv.state === "result" ? "bg-success/20 text-green-700" : "bg-primary/20 text-primary",
-          )}
+          className={cn("rounded-[2px] px-1 py-0.5 font-mono text-[9px] font-semibold", badgeClass)}
         >
-          {inv.state === "result" ? "DONE" : "RUNNING"}
+          {label}
         </span>
       </button>
 
@@ -118,7 +116,11 @@ function ToolPartCard({ part }: { part: Record<string, unknown> }) {
         <div className="border-on-surface/5 border-t px-2.5 py-1.5">
           <pre className="overflow-x-auto rounded-[var(--radius-xs)] bg-zinc-900 p-2 font-mono text-[11px] leading-4 text-zinc-300">
             {JSON.stringify(
-              { args: inv.args, result: "result" in inv ? inv.result : undefined },
+              {
+                input: part.input,
+                output: "output" in part ? part.output : undefined,
+                errorText: "errorText" in part ? part.errorText : undefined,
+              },
               null,
               2,
             )}

@@ -9,14 +9,29 @@ import { AppBar } from "@/components/app-bar";
 import { UserSelector } from "@/components/user-selector";
 import { ChatPanel } from "@/components/chat-panel";
 import { InspectorPanel } from "@/components/inspector-panel";
+import type { InvocationPart } from "@/lib/tool-part";
 
 export default function DashboardPage() {
   const [selectedUser, setSelectedUser] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [toolInvocations, setToolInvocations] = useState<unknown[]>([]);
+  const [toolInvocations, setToolInvocations] = useState<InvocationPart[]>([]);
 
-  const handleToolInvocation = useCallback((invocation: unknown) => {
-    setToolInvocations((prev) => [...prev, invocation]);
+  /**
+   * Upsert by `toolCallId` — state transitions replace the row rather
+   * than append. Bail out with the same array reference if the part is
+   * identical, so React can skip the inspector re-render.
+   */
+  const handleToolInvocation = useCallback((part: InvocationPart) => {
+    const id = part.toolCallId;
+    if (!id) return;
+    setToolInvocations((prev) => {
+      const idx = prev.findIndex((p) => p.toolCallId === id);
+      if (idx === -1) return [...prev, part];
+      if (prev[idx] === part) return prev;
+      const next = prev.slice();
+      next[idx] = part;
+      return next;
+    });
   }, []);
 
   const toggleInspector = useCallback(() => setInspectorOpen((v) => !v), []);

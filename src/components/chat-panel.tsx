@@ -1,20 +1,26 @@
 /**
  * @file Main chat panel using the Vercel AI SDK v6 useChat hook.
+ *
+ * The inspector panel feed is deduplicated: we only forward a tool part
+ * to the parent when its `(toolCallId, state)` pair changes. Without this
+ * guard, every streaming token update would re-forward every tool part in
+ * the conversation — the inspector would fill with dozens of duplicates.
  */
 
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { DefaultChatTransport, isToolUIPart } from "ai";
 import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sparkles, User } from "lucide-react";
+import type { InvocationPart } from "@/lib/tool-part";
 
 type ChatPanelProps = {
   selectedUser: string;
-  onToolInvocation?: (invocation: unknown) => void;
+  onToolInvocation?: (invocation: InvocationPart) => void;
 };
 
 const SUGGESTED_PROMPTS = [
@@ -43,15 +49,19 @@ export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
     });
   }, [messages]);
 
+  const lastFiredStateRef = useRef<Map<string, string>>(new Map());
+
   useEffect(() => {
     if (!onToolInvocation) return;
     for (const msg of messages) {
-      if (msg.role === "assistant" && msg.parts) {
-        for (const part of msg.parts) {
-          if (part.type.startsWith("tool-")) {
-            onToolInvocation(part);
-          }
-        }
+      if (msg.role !== "assistant" || !msg.parts) continue;
+      for (const part of msg.parts) {
+        if (!isToolUIPart(part)) continue;
+        const id = part.toolCallId;
+        if (!id) continue;
+        if (lastFiredStateRef.current.get(id) === part.state) continue;
+        lastFiredStateRef.current.set(id, part.state);
+        onToolInvocation(part);
       }
     }
   }, [messages, onToolInvocation]);

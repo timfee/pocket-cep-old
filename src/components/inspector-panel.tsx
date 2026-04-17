@@ -1,14 +1,18 @@
 /**
  * @file MCP Inspector panel showing tool invocations from the AI SDK.
+ *
+ * Consumes the shared `InvocationPart` shape. See `src/lib/tool-part.ts`.
  */
 
 "use client";
 
 import { useState } from "react";
 import { X } from "lucide-react";
+import { getToolName } from "ai";
+import { toolPartLabel, type InvocationPart } from "@/lib/tool-part";
 
 type InspectorPanelProps = {
-  invocations: unknown[];
+  invocations: InvocationPart[];
   isOpen: boolean;
   onToggle: () => void;
 };
@@ -55,7 +59,7 @@ export function InspectorPanel({ invocations, isOpen, onToggle }: InspectorPanel
         ) : (
           <div className="flex flex-col gap-1.5">
             {invocations.map((inv, i) => (
-              <InvocationCard key={i} invocation={inv} index={i} />
+              <InvocationCard key={inv.toolCallId ?? i} invocation={inv} index={i} />
             ))}
           </div>
         )}
@@ -64,19 +68,8 @@ export function InspectorPanel({ invocations, isOpen, onToggle }: InspectorPanel
   );
 }
 
-function InvocationCard({ invocation, index }: { invocation: unknown; index: number }) {
+function InvocationCard({ invocation, index }: { invocation: InvocationPart; index: number }) {
   const [expanded, setExpanded] = useState(false);
-
-  const inv =
-    invocation && typeof invocation === "object" && "toolInvocation" in invocation
-      ? (
-          invocation as {
-            toolInvocation: { toolName: string; args: unknown; result?: unknown; state: string };
-          }
-        ).toolInvocation
-      : null;
-
-  if (!inv) return null;
 
   return (
     <div className="rounded-[var(--radius-xs)] border border-zinc-700/50 bg-zinc-800">
@@ -85,14 +78,29 @@ function InvocationCard({ invocation, index }: { invocation: unknown; index: num
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left"
       >
-        <span className="flex-1 truncate font-mono text-[11px] text-zinc-300">{inv.toolName}</span>
+        <span className="flex-1 truncate font-mono text-[11px] text-zinc-300">
+          {getToolName(invocation)}
+        </span>
+        <span className="font-mono text-[9px] text-zinc-500">
+          {toolPartLabel(invocation.state)}
+        </span>
         <span className="font-mono text-[9px] text-zinc-600 tabular-nums">#{index + 1}</span>
       </button>
 
       {expanded && (
         <div className="border-t border-zinc-700/50 p-2">
           <pre className="overflow-x-auto font-mono text-[10px] leading-4 text-zinc-400">
-            {JSON.stringify({ args: inv.args, result: inv.result, state: inv.state }, null, 2)}
+            {JSON.stringify(
+              {
+                toolCallId: invocation.toolCallId,
+                state: invocation.state,
+                input: invocation.input,
+                output: "output" in invocation ? invocation.output : undefined,
+                errorText: "errorText" in invocation ? invocation.errorText : undefined,
+              },
+              null,
+              2,
+            )}
           </pre>
         </div>
       )}

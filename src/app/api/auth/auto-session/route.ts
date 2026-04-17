@@ -23,31 +23,37 @@ import { getEnv } from "@/lib/env";
  * Creates an anonymous session and redirects to the dashboard.
  * Only active in service_account mode; returns 404 otherwise.
  */
-export async function GET(request: Request) {
+export async function GET() {
   const config = getEnv();
 
   if (config.AUTH_MODE !== "service_account") {
     return new Response("Not found", { status: 404 });
   }
 
+  /**
+   * Use BETTER_AUTH_URL as the redirect base (not request.url) so a
+   * spoofed Host header can't turn this into an open redirect.
+   */
+  const base = config.BETTER_AUTH_URL;
+
   let response: Response;
   try {
-    response = await fetch(`${config.BETTER_AUTH_URL}/api/auth/sign-in/anonymous`, {
+    response = await fetch(`${base}/api/auth/sign-in/anonymous`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
       signal: AbortSignal.timeout(5000),
     });
   } catch {
-    return NextResponse.redirect(new URL("/?error=session_unavailable", request.url));
+    return NextResponse.redirect(new URL("/?error=session_unavailable", base));
   }
 
   if (!response.ok) {
-    return NextResponse.redirect(new URL("/?error=session_failed", request.url));
+    return NextResponse.redirect(new URL("/?error=session_failed", base));
   }
 
   const cookies = response.headers.getSetCookie();
-  const headers = new Headers({ Location: new URL("/dashboard", request.url).toString() });
+  const headers = new Headers({ Location: new URL("/dashboard", base).toString() });
   for (const cookie of cookies) {
     headers.append("Set-Cookie", cookie);
   }
