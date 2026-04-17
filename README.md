@@ -1,8 +1,8 @@
 # Pocket CEP
 
-An educational companion app for the [Chrome Enterprise Premium MCP server](https://github.com/google/chrome-enterprise-premium-mcp). Pocket CEP demonstrates how to build a web application that connects to an MCP server using OAuth, calls tools, and integrates an AI-powered chat agent that can investigate Chrome Enterprise user issues.
+An educational companion app for the [Chrome Enterprise Premium MCP server](https://github.com/google/chrome-enterprise-premium-mcp). Pocket CEP demonstrates how to build a web application that connects to an MCP server using OAuth, calls tools **and** server-authored prompts, and integrates an AI-powered chat agent that investigates Chrome Enterprise user issues.
 
-Built with Next.js 16, BetterAuth, Tailwind CSS 4, and the official MCP SDK.
+Built with Next.js 16, the Vercel AI SDK v6, BetterAuth, Tailwind CSS 4, and the official MCP SDK.
 
 ## What It Does
 
@@ -12,12 +12,12 @@ The app is deliberately educational. An **MCP Inspector** panel shows every JSON
 
 ### Features
 
-- **User investigation** - Select a user from a dropdown populated by the Chrome activity log, then ask the AI agent about their issues
-- **Dual LLM support** - Choose between Claude (Anthropic) or Gemini (Google) as the chat agent, using their official SDKs
-- **Two auth modes** - Run with ADC for simple demos, or forward the user's own Google OAuth token for full admin access
-- **MCP auto-start** - Optionally spawn the MCP server as a child process so you only need one terminal
-- **MCP Inspector** - A collapsible panel showing raw JSON-RPC protocol traffic for every tool call
-- **Environment diagnostics** - A `doctor` command that validates your entire setup before you run the app
+- **User investigation** — search the Google Workspace directory (Admin SDK REST), with users who have recent Chrome audit activity pulled to the top. A sidebar "Recent activity" roster surfaces the most-active users in the last 10 days.
+- **Server-authored prompts** — MCP `prompts/list` and `prompts/get` drive the suggested-action cards. Clicking a prompt expands it server-side and sends its authored text (including any formatting contract) to the model.
+- **Dual LLM support** — Claude (Anthropic) or Gemini (Google) via the Vercel AI SDK v6's `@ai-sdk/anthropic` and `@ai-sdk/google` providers.
+- **Two auth modes** — ADC for simple demos, or forward the signed-in user's Google OAuth token for per-user attribution.
+- **MCP Inspector** — a collapsible drawer showing every MCP tool call's input, state, and output, synthesized from the streamed `ToolUIPart` events the AI SDK produces.
+- **Environment diagnostics** — `npm run doctor` validates env, probes the MCP server, and lists reachable tools + prompts.
 
 ## Prerequisites
 
@@ -45,51 +45,47 @@ gcloud auth application-default set-quota-project YOUR_PROJECT_ID
 # 4. Check your environment
 npm run doctor
 
-# 5. Start everything (auto-starts the MCP server)
-MCP_SERVER_CMD="npx @google/chrome-enterprise-premium-mcp@latest" npm run dev
+# 5. Start Pocket CEP + the MCP server together (two named log streams)
+npm run dev:full
 ```
 
 Open http://localhost:3000 and sign in with Google.
 
+Point `dev:full` at a local MCP checkout by overriding `MCP_SERVER_CMD`:
+
+```bash
+MCP_SERVER_CMD="node ../cmcp/mcp-server.js" npm run dev:full
+```
+
 ## Configuration
 
-Configuration is split across two files:
+Two files:
 
 | File | Committed? | Purpose |
 |------|-----------|---------|
-| `.env` | Yes | Non-secret defaults with documentation |
-| `.env.local` | No (gitignored) | Secrets: API keys, OAuth credentials |
+| `.env` | Yes | Non-secret defaults (auth mode, MCP URL, etc.) with documentation |
+| `.env.local` | No (gitignored) | Your secrets and any overrides of the committed defaults |
 
-### Required Secrets (`.env.local`)
-
-```bash
-# Generate a session signing secret
-BETTER_AUTH_SECRET=$(openssl rand -base64 32)
-
-# Google OAuth credentials
-# Create at: https://console.cloud.google.com/apis/credentials
-# Type: OAuth 2.0 Client ID (Web application)
-# Redirect URI: http://localhost:3000/api/auth/callback/google
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=your-client-secret
-
-# LLM API key (only the one matching LLM_PROVIDER is needed)
-ANTHROPIC_API_KEY=sk-ant-...    # https://console.anthropic.com/
-GOOGLE_AI_API_KEY=...           # https://aistudio.google.com/apikey
-```
-
-### Configuration Options (`.env`)
+`cp .env.local.example .env.local` — the example file documents every knob
+(secrets at the top, Google OAuth, and `# commented-out` overrides for
+`AUTH_MODE` / `LLM_PROVIDER` / `LLM_MODEL` / `MCP_SERVER_URL` / `BETTER_AUTH_URL`
+at the bottom). Uncomment only what you need to change.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUTH_MODE` | `service_account` | How MCP calls are authenticated. See [Auth Modes](#auth-modes). |
-| `MCP_SERVER_URL` | `http://localhost:4000/mcp` | URL of the CEP MCP server's HTTP endpoint |
-| `MCP_SERVER_CMD` | *(empty)* | If set, auto-starts the MCP server. See [Auto-Starting the MCP Server](#auto-starting-the-mcp-server). |
-| `LLM_PROVIDER` | `claude` | Which LLM powers the chat agent: `claude` or `gemini` |
-| `LLM_MODEL` | *(auto)* | Override the model ID. Defaults: `claude-sonnet-4-20250514` / `gemini-2.0-flash` |
-| `BETTER_AUTH_URL` | `http://localhost:3000` | The canonical URL where Pocket CEP is running |
+| `BETTER_AUTH_SECRET` | *(required)* | Session signing secret. `openssl rand -base64 32`. |
+| `BETTER_AUTH_URL` | `http://localhost:3000` | Canonical URL where Pocket CEP is running. |
+| `AUTH_MODE` | `service_account` | `service_account` (ADC on server) or `user_oauth` (forward user token). See [Auth Modes](#auth-modes). |
+| `GOOGLE_CLIENT_ID` | — | Required in `user_oauth` mode. |
+| `GOOGLE_CLIENT_SECRET` | — | Required in `user_oauth` mode. |
+| `LLM_PROVIDER` | `claude` | `claude` or `gemini`. |
+| `LLM_MODEL` | *(auto)* | Override. Defaults: `claude-sonnet-4-6` / `gemini-2.5-flash`. |
+| `ANTHROPIC_API_KEY` | — | Required when `LLM_PROVIDER=claude`. |
+| `GOOGLE_AI_API_KEY` | — | Required when `LLM_PROVIDER=gemini`. |
+| `MCP_SERVER_URL` | `http://localhost:4000/mcp` | CEP MCP server HTTP endpoint. |
+| `MCP_SERVER_CMD` | *(shell-only)* | Shell env var read by `npm run dev:full` to start the MCP server. Not validated by the app. |
 
-All variables are validated at startup with Zod. If anything is missing or malformed, you get a clear error message pointing you to the fix.
+All app-side variables are validated at startup with Zod — missing or malformed values surface as a startup error pointing you to the fix.
 
 ## Auth Modes
 
@@ -138,49 +134,48 @@ Pocket CEP supports two authentication modes that control how it communicates wi
 ### Claude (Anthropic)
 
 ```
-.env: LLM_PROVIDER=claude
-.env.local: ANTHROPIC_API_KEY=sk-ant-...
+LLM_PROVIDER=claude
+ANTHROPIC_API_KEY=sk-ant-…
 ```
 
-Uses the official `@anthropic-ai/sdk`. Default model: `claude-sonnet-4-20250514`. Claude has strong tool-use capabilities and native understanding of MCP concepts.
+Routed through the Vercel AI SDK's `@ai-sdk/anthropic` provider. Default model: `claude-sonnet-4-6`.
 
 ### Gemini (Google)
 
 ```
-.env: LLM_PROVIDER=gemini
-.env.local: GOOGLE_AI_API_KEY=...
+LLM_PROVIDER=gemini
+GOOGLE_AI_API_KEY=…
 ```
 
-Uses the official `@google/generative-ai`. Default model: `gemini-2.0-flash`. Keeps the entire stack within the Google ecosystem.
+Routed through `@ai-sdk/google`. Default model: `gemini-2.5-flash`.
 
-Both adapters support streaming responses and multi-turn tool calling. You can override the specific model with `LLM_MODEL` in `.env`.
+Both providers stream through the same `streamText` call, so the UI code is identical. Override the specific model with `LLM_MODEL`.
 
 ## Starting the MCP Server
 
-Pocket CEP needs the Chrome Enterprise Premium MCP server running in HTTP mode.
+Pocket CEP needs the Chrome Enterprise Premium MCP server running in HTTP mode on `http://localhost:4000/mcp`.
 
-### Auto-Starting the MCP Server
-
-Set `MCP_SERVER_CMD` and Pocket CEP spawns the MCP server as a child process on startup. One terminal, no fuss.
+### Together with the app (recommended)
 
 ```bash
-# In .env (persisted):
-MCP_SERVER_CMD=npx @google/chrome-enterprise-premium-mcp@latest
-
-# Or as an inline env var (one-off):
-MCP_SERVER_CMD="npx @google/chrome-enterprise-premium-mcp@latest" npm run dev
-
-# Local clone:
-MCP_SERVER_CMD="node ../cmcp/mcp-server.js" npm run dev
+npm run dev:full
 ```
 
-The command runs with `GCP_STDIO=false` and `PORT` (from `MCP_SERVER_URL`) injected automatically. The server's logs appear in the same console with a `[mcp-server]` prefix. The process is killed when Pocket CEP shuts down.
+`dev:full` uses `concurrently` to run `next dev` and the MCP server side-by-side, prefixed with `[app]` and `[mcp]`. By default it invokes `npx @google/chrome-enterprise-premium-mcp@latest`. Override by setting `MCP_SERVER_CMD` in your shell:
 
-If the command fails to start, you'll see detailed error messages explaining what went wrong and how to fix it.
+```bash
+# Pull a specific tag:
+MCP_SERVER_CMD="npx @google/chrome-enterprise-premium-mcp@0.4.0" npm run dev:full
 
-### Manual Start (separate terminal)
+# Run a local checkout:
+MCP_SERVER_CMD="node ../cmcp/mcp-server.js" npm run dev:full
+```
 
-If you prefer to manage the MCP server yourself, leave `MCP_SERVER_CMD` blank and start it separately:
+`dev:full` injects `GCP_STDIO=false PORT=4000 LOG_LEVEL=warn` around whatever command it runs.
+
+### Manual start (two terminals)
+
+If you prefer to manage the MCP server yourself:
 
 ```bash
 # Terminal 1: MCP server
@@ -190,18 +185,14 @@ GCP_STDIO=false PORT=4000 npx @google/chrome-enterprise-premium-mcp@latest
 npm run dev
 ```
 
-For `user_oauth` mode, add `OAUTH_ENABLED=true` to the MCP server:
+For `user_oauth` mode, add `OAUTH_ENABLED=true` to the MCP server.
 
-```bash
-GCP_STDIO=false PORT=4000 OAUTH_ENABLED=true npx @google/chrome-enterprise-premium-mcp@latest
-```
-
-### Default Ports
+### Default ports
 
 | Service | Port | Controlled by |
 |---------|------|---------------|
-| Pocket CEP (Next.js) | 3000 | `PORT` env var or `next dev --port` |
-| MCP Server | 4000 | Port from `MCP_SERVER_URL` (auto-start) or `PORT` env var (manual) |
+| Pocket CEP (Next.js) | 3000 | `PORT` or `next dev --port` |
+| MCP Server | 4000 | Shell `PORT` (inherited via `dev:full` or exported manually) |
 
 ## Deployment Options
 
@@ -254,54 +245,57 @@ This avoids requiring every attendee to be a Workspace admin.
 pocket-cep/
   .env                          # Committed defaults with documentation
   .env.local                    # Secrets (gitignored)
-  .env.local.example            # Template for .env.local
+  .env.local.example            # Comprehensive template
   AGENTS.md                     # Coding standards
   CLAUDE.md -> AGENTS.md        # Symlink for Claude Code
   GEMINI.md -> AGENTS.md        # Symlink for Gemini
 
   src/
     app/
-      layout.tsx                # Root layout with Inter font
+      layout.tsx                # Root layout — Roboto + Roboto Mono via next/font
       page.tsx                  # Landing page with Google sign-in
-      globals.css               # Tailwind v4 + Material Design tokens
-      dashboard/page.tsx        # Main UI: user selector + chat + inspector
+      globals.css               # Tailwind v4 + Material Design tokens + prose styles
+      dashboard/page.tsx        # Main UI: sidebar + chat + inspector
       api/
         auth/[...all]/route.ts  # BetterAuth catch-all
-        users/route.ts          # GET: users from activity log
-        chat/route.ts           # POST: streaming agent chat (SSE)
-        tools/route.ts          # GET: available MCP tools
+        auth/auto-session/route.ts  # Mints an anonymous session in SA mode
+        users/route.ts          # GET: Admin SDK directory search
+        users/activity/route.ts # GET: emails with recent Chrome audit activity
+        chat/route.ts           # POST: Vercel AI SDK streamText response
+        tools/route.ts          # GET: available MCP tools (for inspector)
+        prompts/route.ts        # GET: server prompts catalog; POST: expand by name
 
     components/
-      app-bar.tsx               # Google-style top navigation
-      user-selector.tsx         # User dropdown from activity log
-      chat-panel.tsx            # Chat orchestrator with SSE streaming
-      chat-message.tsx          # Message bubble with tool call cards
-      chat-input.tsx            # Text input with send button
-      inspector-panel.tsx       # MCP protocol traffic viewer
+      app-bar.tsx               # Top command bar (brand + /-hint + session chip)
+      user-selector.tsx         # Directory combobox with activity-weighted ranking
+      activity-roster.tsx       # Sidebar "Recent activity" list
+      chat-panel.tsx            # Chat host — useChat, scroll, empty states
+      chat-message.tsx          # Message bubble + tool-part cards + prompt chip
+      chat-input.tsx            # Auto-growing textarea + Enter/Stop controls
+      inspector-panel.tsx       # MCP tool invocation drawer
       sign-in-button.tsx        # Google sign-in button
+      ui/skeleton.tsx           # Loading skeleton
+      ui/badge.tsx              # Generic badge
 
     lib/
-      env.ts                    # Zod-validated environment variables
+      env.ts                    # Zod-validated environment (discriminated unions)
       errors.ts                 # Shared error message extraction
       auth.ts                   # BetterAuth server config (stateless, no DB)
       auth-client.ts            # BetterAuth browser client
-      mcp-client.ts             # MCP SDK StreamableHTTP wrapper
-      mcp-server-process.ts     # Optional MCP server child process manager
-      agent-loop.ts             # LLM <-> MCP tool execution loop (with tool cache)
-      access-token.ts           # Google OAuth token retrieval helper
+      access-token.ts           # Google OAuth token retrieval
+      admin-sdk.ts              # Directory API REST wrapper
+      cn.ts                     # clsx + tailwind-merge helper
       constants.ts              # System prompt, default models, log tags
+      mcp-client.ts             # MCP SDK StreamableHTTP wrapper (tools + prompts)
+      mcp-tools.ts              # AI SDK tool adapter + per-caller catalog cache
+      tool-part.ts              # Shared ToolUIPart/DynamicToolUIPart type + label
       doctor.ts                 # Environment diagnostic script
-      doctor-checks.ts          # Shared LLM API key probe helpers
-      llm/
-        types.ts                # Shared LLM adapter interface
-        claude.ts               # Anthropic SDK adapter
-        gemini.ts               # Google GenAI adapter
+      doctor-checks.ts          # Shared probe helpers (MCP / Anthropic / Gemini)
 
     proxy.ts                    # Route protection (Next.js 16 proxy convention)
-    instrumentation.ts          # Server startup hook (auto-starts MCP server)
 
     __tests__/
-      unit/                     # env + mcp-client + access-token
+      unit/                     # env, mcp-client (mocked SDK), access-token
       integration/              # admin-sdk query translation
       e2e/                      # Playwright: landing, chat flow, scroll
 ```
@@ -367,12 +361,11 @@ Static checks:
   ✓ BETTER_AUTH_SECRET is set to a real value
   ✓ AUTH_MODE: service_account
   ✓ LLM_PROVIDER: claude
-  ✓ GOOGLE_CLIENT_ID format looks correct
-  ! MCP_SERVER_CMD not set — you must start the MCP server manually
 
 Runtime checks:
   ✓ MCP server reachable at http://localhost:4000/mcp (status: 405)
   ✓ MCP server has 23 tools available
+  ✓ MCP server has 3 prompts available
   ✓ Anthropic API key accepted (status: 400)
 
 Summary: 10/10 checks passed. All good!
@@ -383,43 +376,57 @@ Summary: 10/10 checks passed. All good!
 ### Architecture
 
 ```
-Browser                     Pocket CEP (Next.js :3000)        External Services
+Browser                     Pocket CEP (Next.js :3000)              External
 
-[Google Sign-In] --------> /api/auth (BetterAuth) ---------> Google OAuth
-                            stores session in signed cookie
+[Google Sign-In] --------> /api/auth            (BetterAuth) -----> Google OAuth
+                            session in signed cookie
 
-[User Dropdown]  --------> /api/users ----------------------> MCP Server :4000
-                            calls get_chrome_activity_log      (Bearer token in
-                            extracts unique actor emails        user_oauth mode)
+[User selector]  --------> /api/users           (Admin SDK) -------> Google Directory
+                 --------> /api/users/activity  (MCP tool) --------> MCP Server :4000
+                            `get_chrome_activity_log` → {email → eventCount}
 
-[Chat UI] ---------------> /api/chat (SSE stream) ----------> Claude or Gemini
-  message + user             Agent loop:
-                             1. Send to LLM with MCP tools
-                             2. LLM requests tool call ------> MCP Server :4000
-                             3. Tool result fed back to LLM
-                             4. Stream text + events to UI
+[Suggestion cards] ------> /api/prompts         (MCP prompts) -----> MCP Server :4000
+                            GET  → `prompts/list`
+                            POST → `prompts/get` (server expands)
 
-[MCP Inspector] <------- SSE events with raw JSON-RPC protocol traffic
+[Chat UI] ---------------> /api/chat                               -> Anthropic or
+  useChat() → sendMessage   streamText({ tools, stopWhen })           Google AI
+                            tool execute() ---------------------->   MCP Server :4000
+                            UIMessage stream <----------------------
+
+[MCP Inspector] <--------- ToolUIPart events from the same stream
 ```
 
-### The Agent Loop
+### Streaming with the Vercel AI SDK
 
-The core of the chat feature is an async generator in `src/lib/agent-loop.ts`:
+`src/app/api/chat/route.ts` is a thin route handler:
 
-1. Fetch the list of available MCP tools from the server (cached for 60s)
-2. Send the user's message to the LLM along with tool definitions
-3. Stream text deltas back to the browser as SSE events
-4. When the LLM requests a tool call, execute it via the MCP client
-5. Feed the tool result back to the LLM and repeat
-6. Stop when the LLM gives a final text answer (or after 10 iterations)
+```ts
+const result = streamText({
+  model,                                   // anthropic(id) or google(id)
+  system: buildSystemPrompt(selectedUser),
+  messages: await convertToModelMessages(messages),
+  tools,                                   // MCP tools as dynamicTool()s
+  stopWhen: stepCountIs(MAX_AGENT_ITERATIONS),
+});
+return result.toUIMessageStreamResponse();
+```
 
-Every MCP request/response is also emitted as an SSE event, which the Inspector panel renders.
+Tools come from `src/lib/mcp-tools.ts`, which wraps each MCP tool as `dynamicTool({ inputSchema: jsonSchema(t.inputSchema), execute })`. The AI SDK's multi-step loop handles tool threading, so there is no hand-rolled agent loop.
 
-### MCP Communication
+The MCP tool catalog is cached in-process (5 min TTL, keyed by a SHA-256 hash of the access token so `user_oauth` callers don't share catalogs).
 
-Pocket CEP uses the official `@modelcontextprotocol/sdk` to talk to the MCP server over HTTP. The `StreamableHTTPClientTransport` sends JSON-RPC 2.0 requests to `POST /mcp`. Each call creates a fresh connection (the upstream server is stateless).
+### Server-authored prompts
 
-In `user_oauth` mode, the signed-in user's Google access token is injected as a `Bearer` header so the MCP server can use it for downstream Google API calls.
+MCP servers expose **prompts** in addition to tools — structured conversation starters that carry formatting contracts (tables, severity tiers, tone rules). Pocket CEP surfaces them as suggestion cards:
+
+1. `GET /api/prompts` → MCP `prompts/list` → render one card per prompt (with the server-assigned `cep:*` name as a badge).
+2. Clicking a card → `POST /api/prompts` → MCP `prompts/get` → server returns the expanded message body.
+3. Pocket CEP sends that body as a user turn via `useChat().sendMessage({ text, metadata })`. The `metadata` tag collapses the message to a "⚡ Ran cep:health" chip in the UI, but the model still receives the full prompt (so its formatting rules are honored).
+
+### MCP communication
+
+Pocket CEP uses the official `@modelcontextprotocol/sdk` over HTTP. `StreamableHTTPClientTransport` sends JSON-RPC 2.0 to `POST /mcp`. Each call opens a fresh connection (the upstream server is stateless). In `user_oauth` mode, the signed-in user's Google access token is injected as a `Bearer` header.
 
 ## License
 

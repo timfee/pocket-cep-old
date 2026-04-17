@@ -144,9 +144,16 @@ async function main() {
      * is heavy. We only need it if the MCP server is actually reachable.
      */
     try {
-      const { listMcpTools } = await import("./mcp-client");
+      const { listMcpTools, listMcpPrompts } = await import("./mcp-client");
       const tools = await listMcpTools(mcpUrl);
       report(true, `MCP server has ${tools.length} tools available`);
+
+      try {
+        const prompts = await listMcpPrompts(mcpUrl);
+        report(true, `MCP server has ${prompts.length} prompts available`);
+      } catch (error) {
+        report(false, `MCP prompt listing failed — ${getErrorMessage(error)}`);
+      }
     } catch (error) {
       report(false, `MCP tool listing failed — ${getErrorMessage(error)}`);
     }
