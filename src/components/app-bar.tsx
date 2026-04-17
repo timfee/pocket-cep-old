@@ -17,13 +17,16 @@
 
 "use client";
 
+import { Shield } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { SA_EMAIL_DOMAIN } from "@/lib/constants";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * Top app bar displaying the current auth state. Adapts its content
  * based on whether the session is an anonymous service-account session
- * or a real Google OAuth session.
+ * or a real Google OAuth session. Styled after Google Cloud Console's
+ * header with a product icon, separator, and user section.
  */
 export function AppBar() {
   const session = authClient.useSession();
@@ -38,22 +41,16 @@ export function AppBar() {
   return (
     <header className="bg-surface border-on-surface/10 flex h-12 items-center gap-4 border-b px-4">
       <div className="flex items-center gap-2">
-        <svg
-          viewBox="0 0 16 16"
-          fill="currentColor"
-          className="fill-primary size-4 shrink-0"
-          aria-hidden="true"
-        >
-          <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm3.28 5.28-4 4a.75.75 0 0 1-1.06 0l-2-2a.75.75 0 1 1 1.06-1.06L6.75 8.69l3.47-3.47a.75.75 0 0 1 1.06 1.06Z" />
-        </svg>
+        <Shield className="text-primary size-4 shrink-0" aria-hidden="true" />
         <span className="text-on-surface font-medium">Pocket CEP</span>
       </div>
 
+      {/** Vertical separator mirrors Google Cloud Console's divider between product name and controls. */}
+      <div className="border-on-surface/10 h-5 border-l" aria-hidden="true" />
+
       <div className="ml-auto flex items-center gap-2">
         {isAnonymous ? (
-          <span className="bg-surface-container text-on-surface-variant rounded-[var(--radius-xs)] px-2 py-0.5 text-xs font-medium">
-            Service Account
-          </span>
+          <Badge variant="muted">Service Account</Badge>
         ) : (
           <>
             {user && (

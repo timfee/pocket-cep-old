@@ -1,10 +1,13 @@
 /**
- * @file MD3-styled chat input bar with send button.
+ * @file Gemini-styled chat input bar with send button.
  *
  * Controlled input that calls `onSend` with trimmed text on Enter or
  * button click. The input auto-focuses when `disabled` toggles off
  * (i.e., after the assistant finishes streaming), so the user can
  * immediately type a follow-up question without clicking.
+ *
+ * During streaming the send button swaps to a spinning loader icon,
+ * giving clear visual feedback that a response is in progress.
  *
  * The send button uses a hidden touch-target expander (the invisible
  * `<span>` overlay) to meet the 48px minimum tap target on mobile
@@ -14,17 +17,20 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { Send, Loader2 } from "lucide-react";
 
 type ChatInputProps = {
   onSend: (message: string) => void;
   disabled?: boolean;
+  isStreaming?: boolean;
 };
 
 /**
  * Chat input with a send button. Disables itself during streaming to
  * prevent overlapping requests, and re-focuses after the stream ends.
+ * Shows a spinning loader when streaming for Gemini-style feedback.
  */
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, isStreaming }: ChatInputProps) {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -64,12 +70,11 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         type="button"
         onClick={handleSubmit}
         disabled={disabled || !value.trim()}
-        aria-label="Send message"
+        aria-label={isStreaming ? "Waiting for response" : "Send message"}
         className="bg-primary text-on-primary hover:bg-primary-hover focus-visible:outline-primary relative flex size-9 shrink-0 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-40"
       >
-        <svg viewBox="0 0 16 16" fill="currentColor" className="size-4">
-          <path d="M1.724 1.053a.5.5 0 0 0-.714.545l1.403 4.85a.5.5 0 0 0 .397.354l5.69.953c.268.053.268.442 0 .495l-5.69.953a.5.5 0 0 0-.397.354l-1.403 4.85a.5.5 0 0 0 .714.545l13-6.5a.5.5 0 0 0 0-.894l-13-6.5Z" />
-        </svg>
+        {/* Swap between send arrow and spinner so users know the agent is working */}
+        {isStreaming ? <Loader2 className="spin-slow size-4" /> : <Send className="size-4" />}
         <span
           className="absolute top-1/2 left-1/2 size-[max(100%,3rem)] -translate-x-1/2 -translate-y-1/2 pointer-fine:hidden"
           aria-hidden="true"

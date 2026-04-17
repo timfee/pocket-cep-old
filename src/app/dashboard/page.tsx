@@ -99,7 +99,11 @@ export default function DashboardPage() {
             <UserSelector selectedUser={selectedUser} onUserChange={setSelectedUser} />
           </div>
 
-          <ChatPanel selectedUser={selectedUser} onProtocolEvent={handleProtocolEvent} />
+          <ChatPanel
+            selectedUser={selectedUser}
+            onProtocolEvent={handleProtocolEvent}
+            eventCount={protocolEvents.length}
+          />
         </div>
 
         <InspectorPanel events={protocolEvents} isOpen={inspectorOpen} onToggle={toggleInspector} />

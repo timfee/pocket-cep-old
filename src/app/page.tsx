@@ -13,6 +13,7 @@
  * a separate client component imported below.
  */
 
+import { Shield } from "lucide-react";
 import { SignInButton } from "@/components/sign-in-button";
 
 /**
@@ -25,14 +26,7 @@ export default function LandingPage() {
     <div className="bg-surface-dim flex flex-1 items-center justify-center px-4">
       <main className="bg-surface ring-on-surface/10 flex w-full max-w-[400px] flex-col items-center gap-6 rounded-[var(--radius-md)] px-10 py-10 shadow-[var(--shadow-elevation-1)] ring-1">
         <div className="flex flex-col items-center gap-2">
-          <svg
-            viewBox="0 0 16 16"
-            fill="currentColor"
-            className="fill-primary size-8"
-            aria-hidden="true"
-          >
-            <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm3.28 5.28-4 4a.75.75 0 0 1-1.06 0l-2-2a.75.75 0 1 1 1.06-1.06L6.75 8.69l3.47-3.47a.75.75 0 0 1 1.06 1.06Z" />
-          </svg>
+          <Shield className="text-primary size-8" aria-hidden="true" />
           <h1 className="text-on-surface text-[1.375rem] font-medium text-balance">Pocket CEP</h1>
         </div>
 
@@ -48,6 +42,11 @@ export default function LandingPage() {
           server.
         </p>
       </main>
+
+      {/** Subtle footer anchors the page and communicates the underlying technology. */}
+      <footer className="absolute bottom-4">
+        <p className="text-on-surface-muted text-[11px]">Powered by Model Context Protocol</p>
+      </footer>
     </div>
   );
 }

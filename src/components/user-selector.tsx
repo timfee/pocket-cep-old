@@ -26,7 +26,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { Search, RefreshCw, Check, UserX } from "lucide-react";
+import { cn } from "@/lib/cn";
 import { getErrorMessage } from "@/lib/errors";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import type { UserEntry } from "@/app/api/users/route";
 
 type UserSelectorProps = {
@@ -76,7 +80,7 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
     fetchUsers();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Filter users by query.
+  /** Filter users by query — case-insensitive substring match on email. */
   const filtered = query
     ? users.filter((u) => u.email.toLowerCase().includes(query.toLowerCase()))
     : users;
@@ -93,7 +97,11 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
   };
 
   const handleBlur = () => {
-    // Delay close so click on list item registers first.
+    /**
+     * Delay closing so that mousedown on a list item registers
+     * before the dropdown unmounts. Without this, clicks on
+     * options would be swallowed by the blur event.
+     */
     setTimeout(() => setIsOpen(false), 200);
   };
 
@@ -138,6 +146,24 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
     );
   }
 
+  /**
+   * Staggered-width skeletons approximate a user list while loading.
+   * Varying widths prevent the "barcode" look that uniform skeletons create.
+   */
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <label className="text-on-surface text-xs font-medium">Investigate user</label>
+        <div className="flex flex-col gap-1.5">
+          <Skeleton className="h-7 w-full" />
+          <Skeleton className="h-7 w-5/6" />
+          <Skeleton className="h-7 w-4/6" />
+          <Skeleton className="h-7 w-3/6" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex flex-col gap-1.5">
       <label htmlFor="user-search" className="text-on-surface text-xs font-medium">
@@ -160,22 +186,13 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
             onFocus={() => setIsOpen(true)}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
-            disabled={loading}
-            placeholder={loading ? "Loading users..." : "Search by email..."}
-            className="bg-surface text-on-surface placeholder:text-on-surface-muted focus:ring-primary disabled:bg-surface-container disabled:text-on-surface-muted ring-on-surface/10 w-full rounded-[var(--radius-xs)] py-1.5 pr-8 pl-3 text-xs ring-1 focus:ring-2 focus:outline-none"
+            placeholder="Search by email..."
+            className="bg-surface text-on-surface placeholder:text-on-surface-muted focus:ring-primary ring-on-surface/10 w-full rounded-[var(--radius-xs)] py-1.5 pr-8 pl-3 text-xs ring-1 focus:ring-2 focus:outline-none"
           />
-          <svg
-            viewBox="0 0 16 16"
-            fill="currentColor"
+          <Search
             className="text-on-surface-muted pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2"
             aria-hidden="true"
-          >
-            <path
-              fillRule="evenodd"
-              d="M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z"
-              clipRule="evenodd"
-            />
-          </svg>
+          />
 
           {isOpen && filtered.length > 0 && (
             <ul
@@ -190,19 +207,26 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
                   role="option"
                   aria-selected={user.email === selectedUser}
                   onMouseDown={() => selectUser(user.email)}
-                  className={`state-layer flex cursor-pointer items-center gap-2 px-3 py-1.5 ${
-                    user.email === selectedUser ? "bg-primary-light" : ""
-                  }`}
-                >
-                  <span className="flex-1 truncate text-xs">{user.email}</span>
-                  {user.eventCount > 0 && (
-                    <span className="text-on-surface-muted text-[10px] tabular-nums">
-                      {user.eventCount} events
-                    </span>
+                  className={cn(
+                    "state-layer slide-up flex cursor-pointer items-center gap-2 px-3 py-1.5",
+                    user.email === selectedUser && "bg-primary-light",
                   )}
+                >
+                  {user.email === selectedUser && (
+                    <Check className="text-primary size-3.5 shrink-0" aria-hidden="true" />
+                  )}
+                  <span className="flex-1 truncate text-xs">{user.email}</span>
+                  {user.eventCount > 0 && <Badge variant="muted">{user.eventCount} events</Badge>}
                 </li>
               ))}
             </ul>
+          )}
+
+          {isOpen && query && filtered.length === 0 && (
+            <div className="bg-surface ring-on-surface/10 absolute top-full left-0 z-20 mt-1 flex w-full flex-col items-center gap-1.5 rounded-[var(--radius-sm)] px-3 py-4 shadow-[var(--shadow-elevation-2)] ring-1">
+              <UserX className="text-on-surface-muted size-5" aria-hidden="true" />
+              <span className="text-on-surface-muted text-xs">No users found</span>
+            </div>
           )}
         </div>
 
@@ -213,9 +237,12 @@ export function UserSelector({ selectedUser, onUserChange }: UserSelectorProps) 
           aria-label="Refresh user list"
           className="state-layer text-on-surface-variant relative rounded-[var(--radius-xs)] p-1.5 disabled:opacity-50"
         >
-          <svg viewBox="0 0 16 16" fill="currentColor" className="size-4 shrink-0">
-            <path d="M13.836 2.477a.75.75 0 0 1 .75.75v3.182a.75.75 0 0 1-.75.75h-3.182a.75.75 0 0 1 0-1.5h1.37l-.84-.841a4.5 4.5 0 0 0-7.08.932.75.75 0 0 1-1.3-.75 6 6 0 0 1 9.44-1.242l.842.84V3.227a.75.75 0 0 1 .75-.75Zm-.911 7.5A.75.75 0 0 1 13.199 11a6 6 0 0 1-9.44 1.241l-.84-.84v1.371a.75.75 0 0 1-1.5 0V9.591a.75.75 0 0 1 .75-.75H5.35a.75.75 0 0 1 0 1.5H3.98l.841.841a4.5 4.5 0 0 0 7.08-.932.75.75 0 0 1 1.025-.273Z" />
-          </svg>
+          <RefreshCw className={cn("size-4 shrink-0", loading && "spin-slow")} aria-hidden="true" />
+          {/**
+           * Invisible touch-target expander for mobile devices.
+           * pointer-fine:hidden hides it on desktop where precise
+           * cursors don't need oversized hit areas.
+           */}
           <span
             className="absolute top-1/2 left-1/2 size-[max(100%,3rem)] -translate-x-1/2 -translate-y-1/2 pointer-fine:hidden"
             aria-hidden="true"
