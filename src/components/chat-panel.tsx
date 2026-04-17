@@ -11,7 +11,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isToolUIPart } from "ai";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -32,12 +32,24 @@ const SUGGESTED_PROMPTS = [
 export function ChatPanel({ selectedUser, onToolInvocation }: ChatPanelProps) {
   const [input, setInput] = useState("");
 
-  const { messages, sendMessage, status, error } = useChat({
-    transport: new DefaultChatTransport({
-      api: "/api/chat",
-      body: { selectedUser },
-    }),
-  });
+  const selectedUserRef = useRef(selectedUser);
+  useEffect(() => {
+    selectedUserRef.current = selectedUser;
+  }, [selectedUser]);
+
+  /**
+   * `body` is a function so the AI SDK resolves it at send-time and
+   * reads the current selectedUser — if we passed the value directly,
+   * the transport would bake in the initial empty string on first render.
+   */
+  const resolveBody = useCallback(() => ({ selectedUser: selectedUserRef.current }), []);
+  const transport = useMemo(
+    // eslint-disable-next-line react-hooks/refs -- body is resolveBody, not a ref read
+    () => new DefaultChatTransport({ api: "/api/chat", body: resolveBody }),
+    [resolveBody],
+  );
+
+  const { messages, sendMessage, status, error } = useChat({ transport });
 
   const isLoading = status === "streaming" || status === "submitted";
   const scrollRef = useRef<HTMLDivElement>(null);
