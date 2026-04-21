@@ -1,13 +1,13 @@
 /**
  * @file Top-bar model selector.
  *
- * Surfaces {@link MODEL_OPTIONS} in a compact dropdown. Models whose
- * provider API key is populated server-side (per `ModeInfo.availableProviders`)
- * or client-side via BYOK are ranked first and marked "Ready"; the
- * rest collapse into an inline "Add API key" affordance that writes
- * the key to `localStorage` only. Keys are **never** sent anywhere
- * except as a per-request `X-Pocket-Cep-Byok` header on the chat call
- * — they're never logged and never persisted server-side.
+ * Rendered as a small pill in the app bar that opens a grouped menu
+ * of {@link MODEL_OPTIONS}. Models whose provider API key is
+ * populated server-side (per `ModeInfo.availableProviders`) or
+ * client-side via BYOK appear under a "Ready" group; the rest live
+ * under "Needs a key" with an inline "Add key" affordance. Keys
+ * never leave the browser except as a per-request
+ * `X-Pocket-Cep-Byok` header.
  *
  * ## Hydration safety
  *
@@ -15,14 +15,14 @@
  * which uses the SSR-stable fallback (`mode.llmModel`) for the first
  * render and reconciles with `localStorage` in a mount effect. Reading
  * `localStorage` directly in `useState`'s initialiser would diverge
- * between server (no `window`) and client (populated), producing a
- * hydration mismatch — see `src/lib/storage.ts`.
+ * between server (no `window`) and client (populated) — see
+ * `src/lib/storage.ts` for details.
  */
 
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, KeyRound, Sparkles } from "lucide-react";
+import { Check, ChevronDown, KeyRound, Plus, Sparkles } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useMode } from "./mode-provider";
 import { MODEL_OPTIONS, getModelById, type ModelOption, type ModelProvider } from "@/lib/models";
@@ -47,10 +47,6 @@ type ModelAvailability = {
   byok: boolean;
 };
 
-/**
- * Top-bar dropdown that lets the user pick the active chat model and
- * paste BYOK keys for providers the server can't fulfil.
- */
 export function ModelSelector() {
   const mode = useMode();
   const [isOpen, setIsOpen] = useState(false);
@@ -65,6 +61,7 @@ export function ModelSelector() {
     openai: "",
     google: "",
   });
+  const [keyEditorFor, setKeyEditorFor] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -80,7 +77,10 @@ export function ModelSelector() {
     if (!isOpen) return;
     function handler(e: MouseEvent) {
       if (!containerRef.current) return;
-      if (!containerRef.current.contains(e.target as Node)) setIsOpen(false);
+      if (!containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        setKeyEditorFor(null);
+      }
     }
     window.addEventListener("mousedown", handler);
     return () => window.removeEventListener("mousedown", handler);
@@ -93,22 +93,22 @@ export function ModelSelector() {
     };
   }
 
-  /**
-   * Ranked view: ready-to-use models first (env or BYOK), then the rest.
-   * Original order is preserved within each bucket.
-   */
-  const ranked = [...MODEL_OPTIONS].sort((a, b) => {
-    const aReady = mode.availableProviders[a.provider] || Boolean(byokKeys[a.provider]);
-    const bReady = mode.availableProviders[b.provider] || Boolean(byokKeys[b.provider]);
-    if (aReady === bReady) return 0;
-    return aReady ? -1 : 1;
-  });
+  function isReady(opt: ModelOption): boolean {
+    const a = availabilityFor(opt);
+    return a.env || a.byok;
+  }
+
+  const readyModels = MODEL_OPTIONS.filter((m) => isReady(m));
+  const needsKeyModels = MODEL_OPTIONS.filter((m) => !isReady(m));
 
   function selectModel(opt: ModelOption) {
-    const { env, byok } = availabilityFor(opt);
-    if (!env && !byok) return;
+    if (!isReady(opt)) {
+      setKeyEditorFor(opt.id);
+      return;
+    }
     setSelected(opt.id);
     setIsOpen(false);
+    setKeyEditorFor(null);
   }
 
   function updateByok(provider: ModelProvider, value: string) {
@@ -125,10 +125,11 @@ export function ModelSelector() {
         onClick={() => setIsOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
-        className="state-layer bg-surface-dim text-on-surface-variant ring-on-surface/10 inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[0.6875rem] font-medium ring-1"
+        aria-label={`Current model: ${selectedOption.label}. Click to change.`}
+        className="state-layer bg-surface-dim text-on-surface ring-on-surface/10 inline-flex h-7 items-center gap-1.5 rounded-full pr-2 pl-2.5 text-[0.75rem] font-medium ring-1"
       >
         <Sparkles className="text-primary size-3" aria-hidden="true" />
-        <span className="max-w-[14ch] truncate">{selectedOption.label}</span>
+        <span className="max-w-[18ch] truncate">{selectedOption.label}</span>
         <ChevronDown className="text-on-surface-muted size-3" aria-hidden="true" />
       </button>
 
@@ -136,168 +137,296 @@ export function ModelSelector() {
         <div
           role="listbox"
           aria-label="Choose a model"
-          className="bg-surface ring-on-surface/10 absolute top-full right-0 z-30 mt-1.5 w-80 overflow-hidden rounded-[var(--radius-sm)] shadow-[var(--shadow-elevation-2)] ring-1"
+          className="bg-surface ring-on-surface/10 absolute top-full right-0 z-30 mt-1.5 w-[22rem] overflow-hidden rounded-[var(--radius-md)] shadow-[var(--shadow-elevation-2)] ring-1"
         >
-          <header className="border-on-surface/10 flex items-baseline justify-between border-b px-3 py-2">
-            <h3 className="text-on-surface text-xs font-semibold">Model</h3>
-            <span className="text-on-surface-muted text-[0.625rem]">via Vercel AI SDK</span>
-          </header>
+          <div className="flex max-h-[28rem] flex-col overflow-y-auto p-1.5">
+            {readyModels.length > 0 && (
+              <ModelGroup label="Ready">
+                {readyModels.map((opt) => (
+                  <ReadyRow
+                    key={opt.id}
+                    option={opt}
+                    isSelected={opt.id === selectedOption.id}
+                    availability={availabilityFor(opt)}
+                    onSelect={() => selectModel(opt)}
+                    onEditKey={() => setKeyEditorFor(opt.id)}
+                    isEditingKey={keyEditorFor === opt.id}
+                    byokValue={byokKeys[opt.provider]}
+                    onByokChange={(v) => updateByok(opt.provider, v)}
+                    onCloseEditor={() => setKeyEditorFor(null)}
+                  />
+                ))}
+              </ModelGroup>
+            )}
 
-          <ul role="list" className="max-h-96 overflow-y-auto p-1">
-            {ranked.map((opt) => (
-              <li key={opt.id}>
-                <ModelRow
-                  option={opt}
-                  availability={availabilityFor(opt)}
-                  isSelected={opt.id === selected}
-                  byokValue={byokKeys[opt.provider]}
-                  onSelect={() => selectModel(opt)}
-                  onByokChange={(value) => updateByok(opt.provider, value)}
-                />
-              </li>
-            ))}
-          </ul>
+            {needsKeyModels.length > 0 && (
+              <ModelGroup label="Needs an API key">
+                {needsKeyModels.map((opt) => (
+                  <NeedsKeyRow
+                    key={opt.id}
+                    option={opt}
+                    isEditing={keyEditorFor === opt.id}
+                    byokValue={byokKeys[opt.provider]}
+                    onOpenEditor={() => setKeyEditorFor(opt.id)}
+                    onCloseEditor={() => setKeyEditorFor(null)}
+                    onByokChange={(v) => updateByok(opt.provider, v)}
+                  />
+                ))}
+              </ModelGroup>
+            )}
+          </div>
+
+          <footer className="border-on-surface/10 bg-surface-dim/60 border-t px-3 py-1.5">
+            <p className="text-on-surface-muted text-[0.625rem]">Powered by Vercel AI SDK</p>
+          </footer>
         </div>
       )}
     </div>
   );
 }
 
-type ModelRowProps = {
+/**
+ * Small group wrapper with an eyebrow label. Uses uppercase tracking
+ * to distinguish section headers from row content without adding
+ * visual weight.
+ */
+function ModelGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-0.5 py-1">
+      <h3 className="text-on-surface-muted px-2 pt-1 pb-1.5 text-[0.6875rem] font-medium">
+        {label}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+type ReadyRowProps = {
   option: ModelOption;
-  availability: ModelAvailability;
   isSelected: boolean;
-  byokValue: string;
+  availability: ModelAvailability;
   onSelect: () => void;
+  onEditKey: () => void;
+  isEditingKey: boolean;
+  byokValue: string;
   onByokChange: (value: string) => void;
+  onCloseEditor: () => void;
 };
 
 /**
- * One row in the dropdown. When the model is ready to use, the whole
- * row is a select button. When it needs BYOK, the row expands into a
- * labeled password-style input.
+ * A row in the "Ready" section. The whole row selects the model. A
+ * checkmark on the right indicates the current selection. For BYOK-
+ * backed models (not server env), a small "Edit key" link appears on
+ * hover so the user can update or revoke their stored key.
  */
-function ModelRow({
+function ReadyRow({
   option,
-  availability,
   isSelected,
-  byokValue,
+  availability,
   onSelect,
+  onEditKey,
+  isEditingKey,
+  byokValue,
   onByokChange,
-}: ModelRowProps) {
-  const isReady = availability.env || availability.byok;
-  const [showKey, setShowKey] = useState(false);
-
+  onCloseEditor,
+}: ReadyRowProps) {
   return (
-    <div
-      className={cn(
-        "flex flex-col gap-1.5 rounded-[var(--radius-xs)] p-2",
-        isSelected ? "bg-primary-light" : "hover:bg-surface-dim",
-      )}
-    >
+    <div className="flex flex-col">
       <button
         type="button"
-        onClick={isReady ? onSelect : () => setShowKey((v) => !v)}
         role="option"
         aria-selected={isSelected}
-        disabled={!isReady && showKey}
-        className="flex items-start gap-2 text-left disabled:cursor-default"
+        onClick={onSelect}
+        className={cn(
+          "group flex w-full items-center gap-3 rounded-[var(--radius-sm)] px-2 py-2 text-left",
+          isSelected ? "bg-primary-light" : "hover:bg-surface-dim",
+        )}
       >
-        <span
-          className={cn(
-            "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full",
-            isSelected ? "bg-primary text-on-primary" : "bg-surface-dim text-on-surface-muted",
-          )}
-          aria-hidden="true"
-        >
-          {isSelected && <Check className="size-2.5" />}
-        </span>
-
+        <ProviderMark provider={option.provider} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <span
               className={cn(
-                "truncate text-xs font-medium",
+                "truncate text-sm font-medium",
                 isSelected ? "text-primary" : "text-on-surface",
               )}
             >
               {option.label}
             </span>
-            <span
-              className={cn(
-                "shrink-0 rounded-full px-1.5 py-0.5 text-[0.625rem] tabular-nums",
-                availability.env
-                  ? "bg-success/15 text-green-700"
-                  : availability.byok
-                    ? "bg-primary/15 text-primary"
-                    : "bg-surface-container text-on-surface-muted",
-              )}
-            >
-              {availability.env ? "Ready" : availability.byok ? "Your key" : "Needs key"}
-            </span>
+            {availability.byok && !availability.env && (
+              <span
+                className="text-on-surface-muted text-[0.625rem]"
+                title="Using your API key from this browser"
+              >
+                · your key
+              </span>
+            )}
           </div>
-          <p className="text-on-surface-muted mt-0.5 text-[0.6875rem] leading-4">
-            {PROVIDER_LABELS[option.provider]} · {option.description}
-          </p>
+          <p className="text-on-surface-muted truncate text-[0.6875rem]">{option.description}</p>
         </div>
+        {isSelected ? (
+          <Check className="text-primary size-4 shrink-0" aria-hidden="true" />
+        ) : availability.byok && !availability.env ? (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditKey();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onEditKey();
+              }
+            }}
+            className="text-on-surface-muted hover:text-primary shrink-0 text-[0.625rem] underline opacity-0 group-hover:opacity-100 focus:opacity-100"
+          >
+            Edit key
+          </span>
+        ) : null}
       </button>
-
-      {showKey && (
-        <ByokInput
+      {isEditingKey && (
+        <ByokEditor
           option={option}
           value={byokValue}
           onChange={onByokChange}
-          onCancel={() => setShowKey(false)}
+          onClose={onCloseEditor}
         />
-      )}
-
-      {isReady && availability.byok && !availability.env && !showKey && (
-        <button
-          type="button"
-          onClick={() => setShowKey(true)}
-          className="text-on-surface-muted hover:text-on-surface self-start text-[0.6875rem] underline"
-        >
-          Edit key
-        </button>
       )}
     </div>
   );
 }
 
-type ByokInputProps = {
+type NeedsKeyRowProps = {
   option: ModelOption;
-  value: string;
-  onChange: (value: string) => void;
-  onCancel: () => void;
+  isEditing: boolean;
+  byokValue: string;
+  onOpenEditor: () => void;
+  onCloseEditor: () => void;
+  onByokChange: (value: string) => void;
 };
 
 /**
- * Password-style input for a user-provided API key. The key lives in
- * `localStorage` only — it's sent to the chat route as a single
- * per-request header, never logged, never persisted server-side.
+ * A row in the "Needs an API key" section. Clicking the row (or the
+ * "Add key" chip) opens the BYOK editor inline.
  */
-function ByokInput({ option, value, onChange, onCancel }: ByokInputProps) {
+function NeedsKeyRow({
+  option,
+  isEditing,
+  byokValue,
+  onOpenEditor,
+  onCloseEditor,
+  onByokChange,
+}: NeedsKeyRowProps) {
+  return (
+    <div className="flex flex-col">
+      <button
+        type="button"
+        onClick={onOpenEditor}
+        aria-expanded={isEditing}
+        className={cn(
+          "flex w-full items-center gap-3 rounded-[var(--radius-sm)] px-2 py-2 text-left",
+          isEditing ? "bg-surface-dim" : "hover:bg-surface-dim",
+        )}
+      >
+        <ProviderMark provider={option.provider} muted />
+        <div className="min-w-0 flex-1">
+          <p className="text-on-surface-variant truncate text-sm font-medium">{option.label}</p>
+          <p className="text-on-surface-muted truncate text-[0.6875rem]">{option.description}</p>
+        </div>
+        {!isEditing && (
+          <span className="text-on-surface-muted ring-on-surface/15 inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[0.625rem] font-medium ring-1">
+            <Plus className="size-2.5" aria-hidden="true" />
+            Add key
+          </span>
+        )}
+      </button>
+      {isEditing && (
+        <ByokEditor
+          option={option}
+          value={byokValue}
+          onChange={onByokChange}
+          onClose={onCloseEditor}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Small provider glyph — a rounded tile with the provider's initial.
+ * `muted` tones the background down for non-ready rows so "Ready"
+ * rows pop visually without needing a saturated badge.
+ */
+function ProviderMark({ provider, muted = false }: { provider: ModelProvider; muted?: boolean }) {
+  const initial = PROVIDER_LABELS[provider][0];
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "inline-flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-xs)] font-mono text-[0.6875rem] font-semibold",
+        muted ? "bg-surface-container text-on-surface-muted" : "bg-primary-light text-primary",
+      )}
+    >
+      {initial}
+    </span>
+  );
+}
+
+type ByokEditorProps = {
+  option: ModelOption;
+  value: string;
+  onChange: (value: string) => void;
+  onClose: () => void;
+};
+
+/**
+ * Inline BYOK input. Appears directly under the row it's editing so
+ * the visual relationship is obvious. The key lives in `localStorage`
+ * only and is sent to the chat route as a single per-request header.
+ */
+function ByokEditor({ option, value, onChange, onClose }: ByokEditorProps) {
   const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   function save() {
     onChange(draft.trim());
-    onCancel();
+    onClose();
+  }
+
+  function clear() {
+    onChange("");
+    onClose();
   }
 
   return (
-    <div className="bg-surface-dim ring-on-surface/10 flex flex-col gap-2 rounded-[var(--radius-xs)] p-2 ring-1">
+    <div className="bg-surface-dim/60 mx-1 mt-0.5 flex flex-col gap-2 rounded-[var(--radius-sm)] p-2.5">
       <label className="text-on-surface-variant flex items-center gap-1.5 text-[0.6875rem] font-medium">
         <KeyRound className="size-3" aria-hidden="true" />
-        <span>{option.envKey} (stays in your browser)</span>
+        <span>
+          {option.envKey}
+          <span className="text-on-surface-muted font-normal"> · stays in your browser</span>
+        </span>
       </label>
       <input
+        ref={inputRef}
         type="password"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+          if (e.key === "Escape") onClose();
+        }}
         autoComplete="off"
         spellCheck={false}
         placeholder={`Paste your ${PROVIDER_LABELS[option.provider]} key`}
-        className="bg-surface text-on-surface ring-on-surface/10 focus:ring-primary rounded-[var(--radius-xs)] px-2 py-1 font-mono text-[11px] ring-1 focus:ring-2 focus:outline-none"
+        className="bg-surface text-on-surface ring-on-surface/10 focus:ring-primary rounded-[var(--radius-xs)] px-2 py-1.5 font-mono text-[0.6875rem] ring-1 focus:ring-2 focus:outline-none"
       />
       <div className="flex items-center justify-between gap-2">
         <a
@@ -308,18 +437,28 @@ function ByokInput({ option, value, onChange, onCancel }: ByokInputProps) {
         >
           Get a key ↗
         </a>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
+          {value && (
+            <button
+              type="button"
+              onClick={clear}
+              className="text-error/80 hover:text-error rounded-[var(--radius-xs)] px-2 py-1 text-[0.6875rem] font-medium"
+            >
+              Remove
+            </button>
+          )}
           <button
             type="button"
-            onClick={onCancel}
-            className="text-on-surface-muted hover:text-on-surface rounded-[var(--radius-xs)] px-2 py-0.5 text-[0.6875rem]"
+            onClick={onClose}
+            className="text-on-surface-muted hover:text-on-surface rounded-[var(--radius-xs)] px-2 py-1 text-[0.6875rem]"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={save}
-            className="bg-primary text-on-primary rounded-[var(--radius-xs)] px-2 py-0.5 text-[0.6875rem] font-medium"
+            disabled={!draft.trim() || draft.trim() === value}
+            className="bg-primary text-on-primary rounded-[var(--radius-xs)] px-2.5 py-1 text-[0.6875rem] font-medium disabled:opacity-40"
           >
             Save
           </button>

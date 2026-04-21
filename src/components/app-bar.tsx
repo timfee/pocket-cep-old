@@ -26,22 +26,28 @@ export function AppBar() {
   };
 
   return (
-    <header className="bg-surface border-on-surface/10 relative z-10 flex h-14 shrink-0 items-center border-b px-4 sm:px-5">
-      <div className="mx-auto flex w-full max-w-[1680px] items-center gap-3 sm:gap-4">
+    <header className="bg-surface border-on-surface/10 relative z-10 flex h-14 shrink-0 items-center border-b px-4 sm:px-6">
+      <div className="mx-auto flex w-full max-w-[1680px] items-center gap-4">
         <Link
           href="/"
           aria-label="Pocket CEP homepage"
-          className="flex shrink-0 items-baseline gap-2 rounded-[var(--radius-xs)]"
+          className="group flex shrink-0 items-center gap-2 rounded-[var(--radius-xs)]"
         >
-          <span className="text-on-surface text-base font-semibold tracking-tight">Pocket CEP</span>
-          <span className="text-on-surface-muted truncate text-[0.6875rem] max-lg:hidden">
+          <span className="text-on-surface text-[0.9375rem] font-semibold tracking-tight">
+            Pocket CEP
+          </span>
+          <span
+            className="bg-on-surface/25 size-1 shrink-0 rounded-full max-lg:hidden"
+            aria-hidden="true"
+          />
+          <span className="text-on-surface-muted truncate text-xs max-lg:hidden">
             Chrome Enterprise Premium
           </span>
         </Link>
 
         <nav
           aria-label="Session and configuration"
-          className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3"
+          className="ml-auto flex shrink-0 items-center gap-2"
         >
           <ModeBadges />
           <SessionChip isAnonymous={!!isAnonymous} email={user?.email} onSignOut={handleSignOut} />
@@ -65,14 +71,14 @@ function SessionChip({ isAnonymous, email, onSignOut }: SessionChipProps) {
   return (
     <div className="flex items-center gap-2.5">
       {email && (
-        <span className="text-on-surface-variant max-w-[16ch] truncate text-xs max-lg:hidden xl:max-w-[28ch] xl:text-sm">
+        <span className="text-on-surface-variant max-w-[20ch] truncate text-xs max-lg:hidden xl:max-w-[28ch]">
           {email}
         </span>
       )}
       <button
         type="button"
         onClick={onSignOut}
-        className="state-layer bg-surface-dim text-on-surface-variant ring-on-surface/10 inline-flex h-8 items-center rounded-[var(--radius-sm)] px-3 text-xs font-medium ring-1"
+        className="state-layer bg-surface-dim text-on-surface-variant ring-on-surface/10 inline-flex h-7 items-center rounded-full px-3 text-[0.75rem] font-medium ring-1"
       >
         Sign out
       </button>
