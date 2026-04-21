@@ -22,7 +22,7 @@ import { cn } from "@/lib/cn";
 import type { InvocationPart } from "@/lib/tool-part";
 import type { ActivityMap } from "@/lib/activity-data";
 import { SIDEBAR_COLLAPSED_KEY, USER_SEARCH_INPUT_ID } from "@/lib/constants";
-import { Activity, Eraser, Wrench } from "lucide-react";
+import { Activity, Eraser, PanelLeftClose, PanelLeftOpen, Wrench } from "lucide-react";
 
 /**
  * Response shape returned by `GET /api/users/activity`.
@@ -146,7 +146,7 @@ function DashboardShell() {
 
   return (
     <div className="isolate flex min-h-0 flex-1 flex-col">
-      <AppBar onToggleSidebar={toggleSidebar} isSidebarCollapsed={isSidebarCollapsed} />
+      <AppBar />
 
       <div className="mx-auto flex w-full max-w-[1680px] flex-1 overflow-hidden">
         <aside
@@ -155,7 +155,20 @@ function DashboardShell() {
           hidden={isSidebarCollapsed}
           className="bg-surface border-on-surface/10 flex min-h-0 w-72 shrink-0 flex-col border-r max-md:hidden lg:w-80"
         >
-          <section aria-label="User search" className="border-on-surface/10 border-b px-4 py-4">
+          <section
+            aria-label="User search"
+            className="border-on-surface/10 relative border-b px-4 pt-3 pb-4"
+          >
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              aria-label="Collapse sidebar"
+              aria-expanded="true"
+              aria-controls="dashboard-sidebar"
+              className="state-layer text-on-surface-muted hover:text-on-surface absolute top-2 right-2 inline-flex size-6 items-center justify-center rounded-[var(--radius-xs)]"
+            >
+              <PanelLeftClose className="size-4" aria-hidden="true" />
+            </button>
             <UserSelector
               selectedUser={selectedUser}
               onUserChange={setSelectedUser}
@@ -195,12 +208,20 @@ function DashboardShell() {
                 aria-labelledby="tab-activity"
                 className="flex flex-col gap-2 px-4 py-4"
               >
-                <header className="flex items-baseline justify-between">
+                <header className="flex items-baseline justify-between gap-2">
                   <h2 id="recent-activity-heading" className="text-on-surface text-sm font-medium">
-                    Recent activity
+                    Chrome audit events
                   </h2>
-                  <span className="text-on-surface-muted text-xs tabular-nums">7 days</span>
+                  <span
+                    className="text-on-surface-muted text-xs tabular-nums"
+                    title="Counts are Chrome audit log events per user over the last 7 days"
+                  >
+                    last 7 days
+                  </span>
                 </header>
+                <p className="text-on-surface-muted text-[0.6875rem] leading-4">
+                  Top users by audit-log activity. Click a row to scope the chat to that user.
+                </p>
                 <ActivityRoster
                   activity={activity}
                   selectedUser={selectedUser}
@@ -242,6 +263,22 @@ function DashboardShell() {
         </aside>
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {isSidebarCollapsed && (
+            <div className="border-on-surface/10 bg-surface hidden shrink-0 border-b px-3 py-1.5 md:flex">
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                aria-label="Expand sidebar"
+                aria-expanded="false"
+                aria-controls="dashboard-sidebar"
+                className="state-layer text-on-surface-variant hover:text-on-surface inline-flex items-center gap-1.5 rounded-[var(--radius-xs)] px-2 py-1 text-xs font-medium"
+              >
+                <PanelLeftOpen className="size-4" aria-hidden="true" />
+                <span>Show sidebar</span>
+              </button>
+            </div>
+          )}
+
           <div className="bg-surface border-on-surface/10 border-b p-2 md:hidden">
             <UserSelector
               selectedUser={selectedUser}
