@@ -27,7 +27,8 @@ import { resolve } from "path";
 import { serverSchema, type ServerEnv } from "./env";
 import { getErrorMessage } from "./errors";
 import { isAuthError } from "./auth-errors";
-import { LOG_TAGS, DEFAULT_MODELS } from "./constants";
+import { LOG_TAGS } from "./constants";
+import { getDefaultModelId } from "./models";
 import {
   PASS,
   FAIL,
@@ -158,7 +159,7 @@ function printActiveFlavor(data: ServerEnv) {
       ? "Uses Anthropic's Claude via @ai-sdk/anthropic."
       : "Uses Google's Gemini via @ai-sdk/google.";
 
-  const resolvedModel = data.LLM_MODEL || DEFAULT_MODELS[data.LLM_PROVIDER];
+  const resolvedModel = data.LLM_MODEL || getDefaultModelId(data.LLM_PROVIDER);
   const modelSuffix = data.LLM_MODEL ? "(override)" : "(default)";
 
   console.log("\nActive flavor");

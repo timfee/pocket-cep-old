@@ -22,6 +22,7 @@ import { cn } from "@/lib/cn";
 import type { InvocationPart } from "@/lib/tool-part";
 import type { ActivityMap } from "@/lib/activity-data";
 import { SIDEBAR_COLLAPSED_KEY, USER_SEARCH_INPUT_ID } from "@/lib/constants";
+import { usePersistedString } from "@/lib/storage";
 import { Activity, ChevronLeft, ChevronRight, Eraser, Wrench } from "lucide-react";
 
 /**
@@ -76,34 +77,17 @@ function DashboardShell() {
   const activity = activityData?.activity ?? {};
 
   /**
-   * Sidebar collapse state. SSR-safe default is `false` so the server-
-   * rendered markup matches the most common client state. We hydrate
-   * the persisted preference from localStorage in an effect below to
-   * avoid a hydration mismatch.
+   * Sidebar collapse state, encoded as "1"/"0" strings so it fits the
+   * SSR-safe {@link usePersistedString} hook. SSR default is "0" and
+   * the hook reconciles with the stored value after mount — see
+   * `src/lib/storage.ts` for why lazy-initialising from localStorage
+   * in `useState` would hydration-mismatch.
    */
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-
+  const [collapsedFlag, setCollapsedFlag] = usePersistedString(SIDEBAR_COLLAPSED_KEY, "0");
+  const isSidebarCollapsed = collapsedFlag === "1";
   const toggleSidebar = useCallback(() => {
-    setIsSidebarCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
-      } catch {
-        // ignore — preference simply won't persist
-      }
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (stored === "1") setIsSidebarCollapsed(true);
-    } catch {
-      // ignore
-    }
-  }, []);
+    setCollapsedFlag(collapsedFlag === "1" ? "0" : "1");
+  }, [collapsedFlag, setCollapsedFlag]);
 
   const handleToolInvocation = useCallback((part: InvocationPart) => {
     const id = part.toolCallId;

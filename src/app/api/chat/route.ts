@@ -15,26 +15,49 @@
  * persisted.
  */
 
+import { NextResponse } from "next/server";
 import { streamText, convertToModelMessages, stepCountIs } from "ai";
 import type { LanguageModel, UIMessage } from "ai";
 import { anthropic, createAnthropic } from "@ai-sdk/anthropic";
 import { google, createGoogleGenerativeAI } from "@ai-sdk/google";
 import { openai, createOpenAI } from "@ai-sdk/openai";
 import { getGoogleAccessToken } from "@/lib/access-token";
-import { getEnv } from "@/lib/env";
+import { getEnv, type ServerEnv } from "@/lib/env";
 import { getMcpToolsForAiSdk } from "@/lib/mcp-tools";
 import { requireSession } from "@/lib/session";
-import { buildSystemPrompt, LOG_TAGS, DEFAULT_MODELS, MAX_AGENT_ITERATIONS } from "@/lib/constants";
-import { getErrorMessage } from "@/lib/errors";
-import { isAuthError } from "@/lib/auth-errors";
-import { BYOK_HEADER, getModelById, type ModelOption, type ModelProvider } from "@/lib/models";
+import { buildSystemPrompt, LOG_TAGS, MAX_AGENT_ITERATIONS } from "@/lib/constants";
+import {
+  getDefaultModelFor,
+  getModelById,
+  type ModelEnvKey,
+  type ModelOption,
+  type ModelProvider,
+} from "@/lib/models";
+import { BYOK_HEADER, parseByokHeader } from "@/lib/model-preferences";
+import { respondWithApiError, unauthenticatedResponse } from "@/lib/api-response";
+
+/**
+ * Per-provider SDK bindings. Maps each {@link ModelProvider} to the
+ * default (env-backed) factory, the BYOK-capable factory, and the
+ * server env var name. Replaces a three-branch if/else tree in
+ * `buildModel` with a single lookup.
+ */
+const PROVIDER_SDK: Record<
+  ModelProvider,
+  {
+    factory: (id: string) => LanguageModel;
+    create: (opts: { apiKey: string }) => (id: string) => LanguageModel;
+    envKey: ModelEnvKey;
+  }
+> = {
+  anthropic: { factory: anthropic, create: createAnthropic, envKey: "ANTHROPIC_API_KEY" },
+  openai: { factory: openai, create: createOpenAI, envKey: "OPENAI_API_KEY" },
+  google: { factory: google, create: createGoogleGenerativeAI, envKey: "GOOGLE_AI_API_KEY" },
+};
 
 export async function POST(request: Request) {
   if (!(await requireSession())) {
-    return new Response(JSON.stringify({ error: "Not authenticated" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    return unauthenticatedResponse();
   }
 
   const body = await request.json();
@@ -45,10 +68,7 @@ export async function POST(request: Request) {
   }: { messages: UIMessage[]; selectedUser?: string; modelId?: string } = body;
 
   if (!messages) {
-    return new Response(JSON.stringify({ error: "messages is required" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return NextResponse.json({ error: "messages is required" }, { status: 400 });
   }
 
   const config = getEnv();
@@ -63,16 +83,7 @@ export async function POST(request: Request) {
   try {
     tools = await getMcpToolsForAiSdk(config.MCP_SERVER_URL, accessToken);
   } catch (error) {
-    if (isAuthError(error)) {
-      return new Response(JSON.stringify({ error: error.toPayload() }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    return new Response(JSON.stringify({ error: getErrorMessage(error) }), {
-      status: 502,
-      headers: { "Content-Type": "application/json" },
-    });
+    return respondWithApiError(error, { fallbackStatus: 502 });
   }
 
   const modelOption = resolveModelOption(modelId, config.LLM_PROVIDER);
@@ -81,10 +92,7 @@ export async function POST(request: Request) {
   try {
     model = buildModel(modelOption, byok, config);
   } catch (error) {
-    return new Response(JSON.stringify({ error: getErrorMessage(error) }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return respondWithApiError(error, { fallbackStatus: 400 });
   }
 
   const result = streamText({
@@ -111,26 +119,7 @@ function resolveModelOption(
     const match = getModelById(modelId);
     if (match) return match;
   }
-  const fallback = getModelById(DEFAULT_MODELS[fallbackProvider]);
-  if (fallback) return fallback;
-  // Shouldn't happen — DEFAULT_MODELS values are part of MODEL_OPTIONS.
-  throw new Error(`No model found for fallback provider ${fallbackProvider}`);
-}
-
-/**
- * Parses the `x-pocket-cep-byok` header into a (provider, key) pair
- * and returns the key only when it matches the model's provider.
- * Any parse failure silently resolves to `undefined` — the chat route
- * falls through to the server env key next.
- */
-function parseByokHeader(raw: string | null, expected: ModelProvider): string | undefined {
-  if (!raw) return undefined;
-  const separator = raw.indexOf(":");
-  if (separator <= 0 || separator >= raw.length - 1) return undefined;
-  const provider = raw.slice(0, separator);
-  const key = raw.slice(separator + 1).trim();
-  if (provider !== expected || !key) return undefined;
-  return key;
+  return getDefaultModelFor(fallbackProvider);
 }
 
 /**
@@ -142,34 +131,15 @@ function parseByokHeader(raw: string | null, expected: ModelProvider): string | 
 function buildModel(
   option: ModelOption,
   byokKey: string | undefined,
-  config: ReturnType<typeof getEnv>,
+  config: ServerEnv,
 ): LanguageModel {
-  if (option.provider === "anthropic") {
-    const apiKey = byokKey || config.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      throw new Error(
-        `${option.label} requires ANTHROPIC_API_KEY. Set it in .env.local or paste a key via the model picker.`,
-      );
-    }
-    return byokKey ? createAnthropic({ apiKey })(option.id) : anthropic(option.id);
-  }
-
-  if (option.provider === "openai") {
-    const apiKey = byokKey || config.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error(
-        `${option.label} requires OPENAI_API_KEY. Set it in .env.local or paste a key via the model picker.`,
-      );
-    }
-    return byokKey ? createOpenAI({ apiKey })(option.id) : openai(option.id);
-  }
-
-  // Google (Gemini)
-  const apiKey = byokKey || config.GOOGLE_AI_API_KEY;
+  const sdk = PROVIDER_SDK[option.provider];
+  const envKey = sdk.envKey;
+  const apiKey = byokKey || (config[envKey] as string | undefined);
   if (!apiKey) {
     throw new Error(
-      `${option.label} requires GOOGLE_AI_API_KEY. Set it in .env.local or paste a key via the model picker.`,
+      `${option.label} requires ${envKey}. Set it in .env.local or paste a key via the model picker.`,
     );
   }
-  return byokKey ? createGoogleGenerativeAI({ apiKey })(option.id) : google(option.id);
+  return byokKey ? sdk.create({ apiKey })(option.id) : sdk.factory(option.id);
 }

@@ -18,13 +18,12 @@ import { requireSession } from "@/lib/session";
 import { LOG_TAGS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 import { getOrFetch, CACHE_TAGS } from "@/lib/server-cache";
+import { respondWithApiError, unauthenticatedResponse } from "@/lib/api-response";
 
 const CATALOG_TTL_MS = 5 * 60 * 1000;
 
 export async function GET() {
-  if (!(await requireSession())) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
+  if (!(await requireSession())) return unauthenticatedResponse();
 
   const config = getEnv();
   const accessToken = await getGoogleAccessToken();
@@ -40,13 +39,11 @@ export async function GET() {
     return NextResponse.json({ prompts });
   } catch (error) {
     /**
-     * Don't cache empties — `getOrFetch` already drops failed entries.
-     * During `npm run dev:full` the Next.js app boots a beat before the
-     * MCP server, so the first call can ECONNREFUSED while the server
-     * is still starting. Returning 503 (instead of a silent 200 with
-     * empty prompts) lets the client retry and get the real catalog
-     * once MCP is up. Auth errors still surface as part of the normal
-     * error message.
+     * Return 503 (not the shared helper's default) so the client knows
+     * to retry — during `npm run dev:full` the Next app boots ahead of
+     * the MCP server and the first call can ECONNREFUSED briefly. We
+     * still return an empty `prompts` array so the UI's shape stays
+     * stable when SWR surfaces the payload.
      */
     console.log(LOG_TAGS.MCP, "listMcpPrompts failed:", getErrorMessage(error));
     return NextResponse.json({ prompts: [], error: getErrorMessage(error) }, { status: 503 });
@@ -60,9 +57,7 @@ export async function GET() {
  * turn. Multi-turn expansion can be added later if a prompt needs it.
  */
 export async function POST(request: Request) {
-  if (!(await requireSession())) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
+  if (!(await requireSession())) return unauthenticatedResponse();
 
   const config = getEnv();
   const accessToken = await getGoogleAccessToken();
@@ -86,11 +81,9 @@ export async function POST(request: Request) {
       accessToken,
     );
 
-    /**
-     * Concatenate user-role text only. Non-text content and
-     * assistant/system roles are ignored; add threaded handling when
-     * a server prompt needs it.
-     */
+    // Concatenate user-role text only. Non-text content and
+    // assistant/system roles are ignored; add threaded handling when
+    // a server prompt needs it.
     const text = messages
       .filter((m) => m.role === "user" && m.content.type === "text")
       .map((m) => (m.content.type === "text" ? m.content.text : ""))
@@ -98,6 +91,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ text });
   } catch (error) {
-    return NextResponse.json({ error: getErrorMessage(error) }, { status: 502 });
+    return respondWithApiError(error, { fallbackStatus: 502 });
   }
 }

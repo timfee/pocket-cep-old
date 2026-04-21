@@ -9,9 +9,14 @@
  * except as a per-request `X-Pocket-Cep-Byok` header on the chat call
  * — they're never logged and never persisted server-side.
  *
- * Selection is persisted under `MODEL_SELECTION_KEY`. The chat transport
- * reads both the selection and any BYOK key from localStorage on each
- * message send; this component only owns the UI and the writes.
+ * ## Hydration safety
+ *
+ * The currently-selected ID is held via {@link useSelectedModelId},
+ * which uses the SSR-stable fallback (`mode.llmModel`) for the first
+ * render and reconciles with `localStorage` in a mount effect. Reading
+ * `localStorage` directly in `useState`'s initialiser would diverge
+ * between server (no `window`) and client (populated), producing a
+ * hydration mismatch — see `src/lib/storage.ts`.
  */
 
 "use client";
@@ -20,14 +25,8 @@ import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, KeyRound, Sparkles } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useMode } from "./mode-provider";
-import {
-  BYOK_STORAGE_PREFIX,
-  MODEL_OPTIONS,
-  MODEL_SELECTION_KEY,
-  getModelById,
-  type ModelOption,
-  type ModelProvider,
-} from "@/lib/models";
+import { MODEL_OPTIONS, getModelById, type ModelOption, type ModelProvider } from "@/lib/models";
+import { getStoredByok, setStoredByok, useSelectedModelId } from "@/lib/model-preferences";
 
 const PROVIDER_LABELS: Record<ModelProvider, string> = {
   anthropic: "Anthropic",
@@ -40,49 +39,6 @@ const PROVIDER_KEY_URLS: Record<ModelProvider, string> = {
   openai: "https://platform.openai.com/api-keys",
   google: "https://aistudio.google.com/apikey",
 };
-
-/**
- * Reads the stored BYOK key for a provider. Returns empty string when
- * nothing is stored or storage is unavailable.
- */
-function readByokKey(provider: ModelProvider): string {
-  if (typeof window === "undefined") return "";
-  try {
-    return window.localStorage.getItem(BYOK_STORAGE_PREFIX + provider) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-/**
- * Persists a BYOK key (or clears it with empty string).
- */
-function writeByokKey(provider: ModelProvider, value: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (value) {
-      window.localStorage.setItem(BYOK_STORAGE_PREFIX + provider, value);
-    } else {
-      window.localStorage.removeItem(BYOK_STORAGE_PREFIX + provider);
-    }
-  } catch {
-    // Storage disabled — BYOK simply won't persist this session.
-  }
-}
-
-/**
- * Returns the currently-selected model ID from localStorage, or the
- * server default passed in. SSR-safe (returns the fallback when there
- * is no `window`).
- */
-function readSelectedModel(fallback: string): string {
-  if (typeof window === "undefined") return fallback;
-  try {
-    return window.localStorage.getItem(MODEL_SELECTION_KEY) || fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 type ModelAvailability = {
   /** Server has the env key populated. */
@@ -98,35 +54,28 @@ type ModelAvailability = {
 export function ModelSelector() {
   const mode = useMode();
   const [isOpen, setIsOpen] = useState(false);
-  const [selected, setSelected] = useState<string>(() => readSelectedModel(mode.llmModel));
-  const [byokKeys, setByokKeys] = useState<Record<ModelProvider, string>>(() => ({
+  const [selected, setSelected] = useSelectedModelId(mode.llmModel);
+  /**
+   * BYOK keys live in localStorage. Initial state is empty strings
+   * (matches SSR); a mount effect backfills from storage. Pasted keys
+   * write through immediately via `setStoredByok`.
+   */
+  const [byokKeys, setByokKeys] = useState<Record<ModelProvider, string>>({
     anthropic: "",
     openai: "",
     google: "",
-  }));
+  });
   const containerRef = useRef<HTMLDivElement>(null);
 
-  /**
-   * Hydrate BYOK keys + the persisted selection after mount so SSR and
-   * client first render agree. The server default in `useState(() =>
-   * readSelectedModel(mode.llmModel))` is deliberately naive to avoid
-   * hydration mismatches; we reconcile here.
-   */
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setByokKeys({
-      anthropic: readByokKey("anthropic"),
-      openai: readByokKey("openai"),
-      google: readByokKey("google"),
+      anthropic: getStoredByok("anthropic"),
+      openai: getStoredByok("openai"),
+      google: getStoredByok("google"),
     });
-    const stored = readSelectedModel(mode.llmModel);
-    if (stored !== selected) {
-      setSelected(stored);
-    }
-    // Run only on mount; subsequent changes come from user actions.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Close on outside click.
   useEffect(() => {
     if (!isOpen) return;
     function handler(e: MouseEvent) {
@@ -157,18 +106,13 @@ export function ModelSelector() {
 
   function selectModel(opt: ModelOption) {
     const { env, byok } = availabilityFor(opt);
-    if (!env && !byok) return; // row's "Add API key" panel stays open
+    if (!env && !byok) return;
     setSelected(opt.id);
-    try {
-      window.localStorage.setItem(MODEL_SELECTION_KEY, opt.id);
-    } catch {
-      // preference simply won't persist
-    }
     setIsOpen(false);
   }
 
   function updateByok(provider: ModelProvider, value: string) {
-    writeByokKey(provider, value);
+    setStoredByok(provider, value);
     setByokKeys((prev) => ({ ...prev, [provider]: value }));
   }
 
@@ -200,22 +144,18 @@ export function ModelSelector() {
           </header>
 
           <ul role="list" className="max-h-96 overflow-y-auto p-1">
-            {ranked.map((opt) => {
-              const avail = availabilityFor(opt);
-              const isSelected = opt.id === selected;
-              return (
-                <li key={opt.id}>
-                  <ModelRow
-                    option={opt}
-                    availability={avail}
-                    isSelected={isSelected}
-                    byokValue={byokKeys[opt.provider]}
-                    onSelect={() => selectModel(opt)}
-                    onByokChange={(value) => updateByok(opt.provider, value)}
-                  />
-                </li>
-              );
-            })}
+            {ranked.map((opt) => (
+              <li key={opt.id}>
+                <ModelRow
+                  option={opt}
+                  availability={availabilityFor(opt)}
+                  isSelected={opt.id === selected}
+                  byokValue={byokKeys[opt.provider]}
+                  onSelect={() => selectModel(opt)}
+                  onByokChange={(value) => updateByok(opt.provider, value)}
+                />
+              </li>
+            ))}
           </ul>
         </div>
       )}
@@ -302,7 +242,7 @@ function ModelRow({
         </div>
       </button>
 
-      {!isReady && showKey && (
+      {showKey && (
         <ByokInput
           option={option}
           value={byokValue}
@@ -311,23 +251,14 @@ function ModelRow({
         />
       )}
 
-      {isReady && availability.byok && !availability.env && (
+      {isReady && availability.byok && !availability.env && !showKey && (
         <button
           type="button"
-          onClick={() => setShowKey((v) => !v)}
+          onClick={() => setShowKey(true)}
           className="text-on-surface-muted hover:text-on-surface self-start text-[0.6875rem] underline"
         >
-          {showKey ? "Hide key" : "Edit key"}
+          Edit key
         </button>
-      )}
-
-      {showKey && availability.byok && !availability.env && (
-        <ByokInput
-          option={option}
-          value={byokValue}
-          onChange={onByokChange}
-          onCancel={() => setShowKey(false)}
-        />
       )}
     </div>
   );

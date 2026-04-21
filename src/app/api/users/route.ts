@@ -13,16 +13,15 @@
  * dropdown.
  */
 
-import { NextResponse, type NextRequest } from "next/server";
+import { type NextRequest } from "next/server";
 import { getEnv } from "@/lib/env";
 import { getGoogleAccessToken } from "@/lib/access-token";
 import { searchUsers, buildAdminQuery, type DirectoryUser } from "@/lib/admin-sdk";
-import { isAuthError } from "@/lib/auth-errors";
 import { buildCallerCacheKey } from "@/lib/cache-key";
 import { requireSession } from "@/lib/session";
-import { getErrorMessage } from "@/lib/errors";
 import { conditionalJson } from "@/lib/http-cache";
 import { getOrFetch, CACHE_TAGS } from "@/lib/server-cache";
+import { respondWithApiError, unauthenticatedResponse } from "@/lib/api-response";
 
 export type { DirectoryUser };
 
@@ -33,9 +32,7 @@ const USERS_TTL_MS = 60_000;
  * is passed to the Admin SDK as a server-side filter.
  */
 export async function GET(request: NextRequest) {
-  if (!(await requireSession())) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
+  if (!(await requireSession())) return unauthenticatedResponse();
 
   const query = request.nextUrl.searchParams.get("q") ?? "";
   const config = getEnv();
@@ -52,9 +49,6 @@ export async function GET(request: NextRequest) {
     });
     return conditionalJson(request, { users }, { maxAge: 30, swr: 120 });
   } catch (error) {
-    if (isAuthError(error)) {
-      return NextResponse.json({ error: error.toPayload() }, { status: 401 });
-    }
-    return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
+    return respondWithApiError(error);
   }
 }

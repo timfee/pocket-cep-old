@@ -19,13 +19,12 @@ import { LOG_TAGS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 import { conditionalJson } from "@/lib/http-cache";
 import { getCachedActivity, parseActivityDays, type UserActivity } from "@/lib/activity-data";
+import { respondWithApiError, unauthenticatedResponse } from "@/lib/api-response";
 
 export type { UserActivity };
 
 export async function GET(request: NextRequest) {
-  if (!(await requireSession())) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
+  if (!(await requireSession())) return unauthenticatedResponse();
 
   const days = parseActivityDays(request.nextUrl.searchParams.get("days"));
 
@@ -33,15 +32,10 @@ export async function GET(request: NextRequest) {
     const grouped = await getCachedActivity(days);
     return conditionalJson(request, { activity: grouped }, { maxAge: 60, swr: 540 });
   } catch (error) {
-    if (isAuthError(error)) {
-      return NextResponse.json({ error: error.toPayload() }, { status: 401 });
-    }
-
-    /**
-     * Auth errors are handled above. Non-auth failures (quota, transient
-     * 5xx) fall through to an empty map — the selector works fine
-     * without activity badges.
-     */
+    // Auth errors get the structured payload; non-auth failures (quota,
+    // transient 5xx) fall through to an empty map so the selector can
+    // keep rendering without activity badges.
+    if (isAuthError(error)) return respondWithApiError(error);
     console.log(LOG_TAGS.USERS, "Activity fetch failed:", getErrorMessage(error));
     return NextResponse.json({ activity: {} });
   }

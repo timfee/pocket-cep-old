@@ -14,7 +14,7 @@ import { AuthBanner } from "@/components/auth-banner";
 import { ModeProvider } from "@/components/mode-provider";
 import { SwrProvider } from "@/components/swr-provider";
 import { getEnv } from "@/lib/env";
-import { DEFAULT_MODELS } from "@/lib/constants";
+import { getDefaultModelId } from "@/lib/models";
 import "./globals.css";
 
 /**
@@ -57,7 +57,7 @@ export default function RootLayout({
   const mode = {
     authMode: env.AUTH_MODE,
     llmProvider: env.LLM_PROVIDER,
-    llmModel: env.LLM_MODEL || DEFAULT_MODELS[env.LLM_PROVIDER],
+    llmModel: env.LLM_MODEL || getDefaultModelId(env.LLM_PROVIDER),
     availableProviders: {
       anthropic: Boolean(env.ANTHROPIC_API_KEY),
       openai: Boolean(env.OPENAI_API_KEY),

@@ -41,15 +41,6 @@ export const LOG_TAGS = {
 } as const;
 
 /**
- * Default model IDs used when LLM_MODEL is not set. Update these when
- * newer model versions are released and tested.
- */
-export const DEFAULT_MODELS = {
-  claude: "claude-sonnet-4-6",
-  gemini: "gemini-2.5-flash",
-} as const;
-
-/**
  * Prevents runaway tool-calling loops where the LLM keeps requesting
  * tools without producing a final answer. 10 iterations allows complex
  * multi-step investigations while bounding cost and latency.

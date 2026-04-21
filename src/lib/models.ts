@@ -95,23 +95,46 @@ export function getModelById(id: string): ModelOption | undefined {
 }
 
 /**
- * localStorage key holding the currently-selected model ID.
+ * Server-default model ID per `LLM_PROVIDER` env value. Kept next to
+ * {@link MODEL_OPTIONS} so {@link getDefaultModelFor} can verify the
+ * default still exists in the catalog — if a future cleanup removes
+ * a model, the assertion fires on first access rather than silently
+ * falling back to `MODEL_OPTIONS[0]`.
+ */
+const DEFAULT_MODEL_IDS = {
+  claude: "claude-sonnet-4-6",
+  gemini: "gemini-2.5-flash",
+} as const;
+
+/**
+ * Returns the server-side default {@link ModelOption} for the given
+ * `LLM_PROVIDER` env value. Used when the client omits `modelId`.
+ */
+export function getDefaultModelFor(provider: "claude" | "gemini"): ModelOption {
+  const id = DEFAULT_MODEL_IDS[provider];
+  const match = getModelById(id);
+  if (!match) {
+    throw new Error(
+      `Default model "${id}" for LLM_PROVIDER=${provider} is missing from MODEL_OPTIONS.`,
+    );
+  }
+  return match;
+}
+
+/**
+ * Returns just the default model *ID* for the given provider. Shorter
+ * form for callers that only need the ID (e.g. the root layout's
+ * `llmModel` default).
+ */
+export function getDefaultModelId(provider: "claude" | "gemini"): string {
+  return DEFAULT_MODEL_IDS[provider];
+}
+
+/**
+ * Wire-protocol constants for the model picker. Day-to-day callers
+ * should go through `src/lib/model-preferences.ts`; these are exported
+ * for that module and for tests.
  */
 export const MODEL_SELECTION_KEY = "cep_selected_model";
-
-/**
- * localStorage key prefix for user-supplied API keys. Each provider
- * stores at `<prefix><provider>` (e.g. `cep_byok_openai`). Keys live
- * entirely in the browser; they're sent to the server only as the
- * `X-Pocket-Cep-Key` header on the specific request that needs them
- * and never persisted server-side.
- */
 export const BYOK_STORAGE_PREFIX = "cep_byok_";
-
-/**
- * HTTP header the chat route reads for a user-supplied API key
- * (format: `<provider>:<key>`). Intentionally not an Authorization-
- * like header — we don't want browsers to confuse it with the
- * session cookie or BetterAuth's bearer scheme.
- */
 export const BYOK_HEADER = "x-pocket-cep-byok";

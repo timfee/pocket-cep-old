@@ -25,7 +25,8 @@ import {
 } from "lucide-react";
 import type { InvocationPart } from "@/lib/tool-part";
 import type { Prompt } from "@modelcontextprotocol/sdk/types.js";
-import { BYOK_HEADER, BYOK_STORAGE_PREFIX, MODEL_SELECTION_KEY, getModelById } from "@/lib/models";
+import { getModelById } from "@/lib/models";
+import { buildByokHeader, getStoredModelId } from "@/lib/model-preferences";
 
 type ChatPanelProps = {
   selectedUser: string;
@@ -97,24 +98,17 @@ export function ChatPanel({ selectedUser, onToolInvocation, onClearSelectedUser 
 
   /**
    * Serializes the current model selection + (optional) BYOK key each
-   * time a message is sent. Read from localStorage on the fly rather
-   * than via React state so the user can flip models mid-session
-   * without the transport needing to be rebuilt.
+   * time a message is sent. Read from the storage facade on the fly so
+   * the user can flip models mid-session without rebuilding the transport.
    */
   const resolveBody = useCallback(() => {
-    const modelId =
-      (typeof window !== "undefined" && localStorage.getItem(MODEL_SELECTION_KEY)) || undefined;
-    return { selectedUser: selectedUserRef.current, modelId };
+    return { selectedUser: selectedUserRef.current, modelId: getStoredModelId() ?? undefined };
   }, []);
 
   const resolveHeaders = useCallback((): Record<string, string> => {
-    if (typeof window === "undefined") return {};
-    const modelId = localStorage.getItem(MODEL_SELECTION_KEY);
+    const modelId = getStoredModelId();
     const option = modelId ? getModelById(modelId) : undefined;
-    if (!option) return {};
-    const byok = localStorage.getItem(BYOK_STORAGE_PREFIX + option.provider);
-    if (!byok) return {};
-    return { [BYOK_HEADER]: `${option.provider}:${byok}` };
+    return option ? buildByokHeader(option.provider) : {};
   }, []);
 
   const transport = useMemo(

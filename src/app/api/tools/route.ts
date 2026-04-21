@@ -27,6 +27,7 @@ import { requireSession } from "@/lib/session";
 import { LOG_TAGS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
 import { getOrFetch, CACHE_TAGS } from "@/lib/server-cache";
+import { respondWithApiError, unauthenticatedResponse } from "@/lib/api-response";
 
 /**
  * Tool schemas are stable for the duration of a dev session — the MCP
@@ -40,9 +41,7 @@ const TOOLS_TTL_MS = 5 * 60 * 1000;
  * Requires an authenticated session; returns 401 otherwise.
  */
 export async function GET() {
-  if (!(await requireSession())) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
+  if (!(await requireSession())) return unauthenticatedResponse();
 
   const config = getEnv();
   const accessToken = await getGoogleAccessToken();
@@ -57,8 +56,7 @@ export async function GET() {
     });
     return NextResponse.json({ tools });
   } catch (error) {
-    const message = getErrorMessage(error, "Failed to list tools");
-    console.error(LOG_TAGS.MCP, "Failed to list tools:", message);
-    return NextResponse.json({ error: message }, { status: 502 });
+    console.error(LOG_TAGS.MCP, "Failed to list tools:", getErrorMessage(error));
+    return respondWithApiError(error, { fallbackStatus: 502 });
   }
 }
