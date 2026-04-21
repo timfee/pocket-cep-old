@@ -20,11 +20,21 @@ import type { ReactNode } from "react";
  * Public-safe snapshot of the Pocket CEP flavor. Shared between the
  * root layout (Server Component) and any Client Component that needs
  * to know which mode/provider is running.
+ *
+ * `availableProviders` reports whether each provider's API key is
+ * populated server-side (boolean — never the key itself). The model
+ * selector uses this to mark models as "ready" vs. "bring your own
+ * key", and to rank ready ones first.
  */
 export type ModeInfo = {
   authMode: "service_account" | "user_oauth";
   llmProvider: "claude" | "gemini";
   llmModel: string;
+  availableProviders: {
+    anthropic: boolean;
+    openai: boolean;
+    google: boolean;
+  };
 };
 
 const ModeContext = createContext<ModeInfo | null>(null);

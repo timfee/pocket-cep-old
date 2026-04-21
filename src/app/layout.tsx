@@ -58,6 +58,11 @@ export default function RootLayout({
     authMode: env.AUTH_MODE,
     llmProvider: env.LLM_PROVIDER,
     llmModel: env.LLM_MODEL || DEFAULT_MODELS[env.LLM_PROVIDER],
+    availableProviders: {
+      anthropic: Boolean(env.ANTHROPIC_API_KEY),
+      openai: Boolean(env.OPENAI_API_KEY),
+      google: Boolean(env.GOOGLE_AI_API_KEY),
+    },
   };
 
   return (

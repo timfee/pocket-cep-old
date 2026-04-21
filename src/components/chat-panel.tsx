@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import type { InvocationPart } from "@/lib/tool-part";
 import type { Prompt } from "@modelcontextprotocol/sdk/types.js";
+import { BYOK_HEADER, BYOK_STORAGE_PREFIX, MODEL_SELECTION_KEY, getModelById } from "@/lib/models";
 
 type ChatPanelProps = {
   selectedUser: string;
@@ -94,10 +95,36 @@ export function ChatPanel({ selectedUser, onToolInvocation, onClearSelectedUser 
     selectedUserRef.current = selectedUser;
   }, [selectedUser]);
 
-  const resolveBody = useCallback(() => ({ selectedUser: selectedUserRef.current }), []);
+  /**
+   * Serializes the current model selection + (optional) BYOK key each
+   * time a message is sent. Read from localStorage on the fly rather
+   * than via React state so the user can flip models mid-session
+   * without the transport needing to be rebuilt.
+   */
+  const resolveBody = useCallback(() => {
+    const modelId =
+      (typeof window !== "undefined" && localStorage.getItem(MODEL_SELECTION_KEY)) || undefined;
+    return { selectedUser: selectedUserRef.current, modelId };
+  }, []);
+
+  const resolveHeaders = useCallback((): Record<string, string> => {
+    if (typeof window === "undefined") return {};
+    const modelId = localStorage.getItem(MODEL_SELECTION_KEY);
+    const option = modelId ? getModelById(modelId) : undefined;
+    if (!option) return {};
+    const byok = localStorage.getItem(BYOK_STORAGE_PREFIX + option.provider);
+    if (!byok) return {};
+    return { [BYOK_HEADER]: `${option.provider}:${byok}` };
+  }, []);
+
   const transport = useMemo(
-    () => new DefaultChatTransport({ api: "/api/chat", body: resolveBody }),
-    [resolveBody],
+    () =>
+      new DefaultChatTransport({
+        api: "/api/chat",
+        body: resolveBody,
+        headers: resolveHeaders,
+      }),
+    [resolveBody, resolveHeaders],
   );
 
   const { messages, sendMessage, status, stop, error } = useChat({ transport });

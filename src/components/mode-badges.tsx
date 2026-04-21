@@ -1,17 +1,17 @@
 /**
  * @file Compact pills that explain the active flavor.
  *
- * Shows `<auth mode>` and `<llm provider>` in the app bar so a new
- * engineer can tell — at a glance — which of the four configuration
- * combinations the app booted with. Hovering (or tapping on touch)
- * reveals a short tooltip summarising what that flavor means.
+ * Shows the current AUTH_MODE pill alongside the model selector in
+ * the app bar so a new engineer can tell — at a glance — how the app
+ * is authenticating to Google, and can pick which LLM drives the chat.
  */
 
 "use client";
 
 import { useState } from "react";
-import { KeyRound, ShieldCheck, Sparkles } from "lucide-react";
+import { KeyRound, ShieldCheck } from "lucide-react";
 import { useMode, type ModeInfo } from "./mode-provider";
+import { ModelSelector } from "./model-selector";
 
 type Flavor = {
   icon: React.ComponentType<{ className?: string }>;
@@ -36,35 +36,18 @@ function authFlavor(mode: ModeInfo["authMode"]): Flavor {
   };
 }
 
-function providerFlavor(provider: ModeInfo["llmProvider"], model: string): Flavor {
-  const suffix = model ? ` · ${model}` : "";
-  if (provider === "claude") {
-    return {
-      icon: Sparkles,
-      label: `Claude${suffix}`,
-      tooltip: "Vercel AI SDK → @ai-sdk/anthropic. Uses ANTHROPIC_API_KEY.",
-    };
-  }
-  return {
-    icon: Sparkles,
-    label: `Gemini${suffix}`,
-    tooltip: "Vercel AI SDK → @ai-sdk/google. Uses GOOGLE_AI_API_KEY.",
-  };
-}
-
 /**
- * Renders a pair of pills showing the active AUTH_MODE and LLM_PROVIDER.
- * The pills share a compact style with the `SessionChip` in the app bar.
+ * Renders the AUTH_MODE pill and the model selector dropdown side by
+ * side. Kept compact to fit comfortably in the app bar.
  */
 export function ModeBadges() {
   const mode = useMode();
   const auth = authFlavor(mode.authMode);
-  const llm = providerFlavor(mode.llmProvider, mode.llmModel);
 
   return (
     <div className="flex items-center gap-1.5 max-sm:hidden" aria-label="Active flavor">
       <ModePill flavor={auth} />
-      <ModePill flavor={llm} />
+      <ModelSelector />
     </div>
   );
 }

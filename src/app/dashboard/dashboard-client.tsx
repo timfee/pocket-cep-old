@@ -22,7 +22,7 @@ import { cn } from "@/lib/cn";
 import type { InvocationPart } from "@/lib/tool-part";
 import type { ActivityMap } from "@/lib/activity-data";
 import { SIDEBAR_COLLAPSED_KEY, USER_SEARCH_INPUT_ID } from "@/lib/constants";
-import { Activity, Eraser, PanelLeftClose, PanelLeftOpen, Wrench } from "lucide-react";
+import { Activity, ChevronLeft, ChevronRight, Eraser, Wrench } from "lucide-react";
 
 /**
  * Response shape returned by `GET /api/users/activity`.
@@ -148,7 +148,7 @@ function DashboardShell() {
     <div className="isolate flex min-h-0 flex-1 flex-col">
       <AppBar />
 
-      <div className="mx-auto flex w-full max-w-[1680px] flex-1 overflow-hidden">
+      <div className="relative mx-auto flex w-full max-w-[1680px] flex-1 overflow-hidden">
         <aside
           id="dashboard-sidebar"
           aria-label="Investigation rail"
@@ -157,18 +157,8 @@ function DashboardShell() {
         >
           <section
             aria-label="User search"
-            className="border-on-surface/10 relative border-b px-4 pt-3 pb-4"
+            className="border-on-surface/10 border-b px-4 pt-4 pb-4"
           >
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              aria-label="Collapse sidebar"
-              aria-expanded="true"
-              aria-controls="dashboard-sidebar"
-              className="state-layer text-on-surface-muted hover:text-on-surface absolute top-2 right-2 inline-flex size-6 items-center justify-center rounded-[var(--radius-xs)]"
-            >
-              <PanelLeftClose className="size-4" aria-hidden="true" />
-            </button>
             <UserSelector
               selectedUser={selectedUser}
               onUserChange={setSelectedUser}
@@ -263,22 +253,6 @@ function DashboardShell() {
         </aside>
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {isSidebarCollapsed && (
-            <div className="border-on-surface/10 bg-surface hidden shrink-0 border-b px-3 py-1.5 md:flex">
-              <button
-                type="button"
-                onClick={toggleSidebar}
-                aria-label="Expand sidebar"
-                aria-expanded="false"
-                aria-controls="dashboard-sidebar"
-                className="state-layer text-on-surface-variant hover:text-on-surface inline-flex items-center gap-1.5 rounded-[var(--radius-xs)] px-2 py-1 text-xs font-medium"
-              >
-                <PanelLeftOpen className="size-4" aria-hidden="true" />
-                <span>Show sidebar</span>
-              </button>
-            </div>
-          )}
-
           <div className="bg-surface border-on-surface/10 border-b p-2 md:hidden">
             <UserSelector
               selectedUser={selectedUser}
@@ -293,6 +267,24 @@ function DashboardShell() {
             onClearSelectedUser={() => setSelectedUser("")}
           />
         </main>
+
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!isSidebarCollapsed}
+          aria-controls="dashboard-sidebar"
+          className={cn(
+            "bg-surface text-on-surface-muted hover:text-on-surface hover:bg-surface-container ring-on-surface/15 absolute top-1/2 z-20 hidden size-6 -translate-y-1/2 items-center justify-center rounded-full shadow-[var(--shadow-elevation-1)] ring-1 transition-transform md:inline-flex",
+            isSidebarCollapsed ? "left-2" : "left-72 -translate-x-1/2 lg:left-80",
+          )}
+        >
+          {isSidebarCollapsed ? (
+            <ChevronRight className="size-3.5" aria-hidden="true" />
+          ) : (
+            <ChevronLeft className="size-3.5" aria-hidden="true" />
+          )}
+        </button>
       </div>
     </div>
   );

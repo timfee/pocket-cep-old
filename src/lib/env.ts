@@ -77,6 +77,7 @@ const claudeProvider = z.object({
       'ANTHROPIC_API_KEY is required when LLM_PROVIDER is "claude". Get one at https://console.anthropic.com/',
     ),
   GOOGLE_AI_API_KEY: z.string().default(""),
+  OPENAI_API_KEY: z.string().default(""),
 });
 
 const geminiProvider = z.object({
@@ -88,6 +89,7 @@ const geminiProvider = z.object({
       1,
       'GOOGLE_AI_API_KEY is required when LLM_PROVIDER is "gemini". Get one at https://aistudio.google.com/apikey',
     ),
+  OPENAI_API_KEY: z.string().default(""),
 });
 
 const llmSchema = z.discriminatedUnion("LLM_PROVIDER", [claudeProvider, geminiProvider]);
