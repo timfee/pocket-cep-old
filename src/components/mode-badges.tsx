@@ -1,77 +1,80 @@
 /**
- * @file Compact pills that explain the active flavor.
+ * @file Active-flavor indicator + model picker for the top bar.
  *
- * Shows the current AUTH_MODE pill alongside the model selector in
- * the app bar so a new engineer can tell — at a glance — how the app
- * is authenticating to Google, and can pick which LLM drives the chat.
+ * The auth mode is static information — showing it as a bulky pill
+ * alongside the interactive model picker created pill-soup with no
+ * hierarchy. This component now renders the auth mode as a quiet
+ * status indicator (small dot + muted label) that hover-reveals a
+ * tooltip explaining what the flavor means, then a thin divider,
+ * then the model picker as the clear primary control on the right.
  */
 
 "use client";
 
 import { useState } from "react";
-import { KeyRound, ShieldCheck } from "lucide-react";
 import { useMode, type ModeInfo } from "./mode-provider";
 import { ModelSelector } from "./model-selector";
 
-type Flavor = {
-  icon: React.ComponentType<{ className?: string }>;
+type FlavorCopy = {
   label: string;
   tooltip: string;
+  dotClass: string;
 };
 
-function authFlavor(mode: ModeInfo["authMode"]): Flavor {
+function authFlavor(mode: ModeInfo["authMode"]): FlavorCopy {
   if (mode === "service_account") {
     return {
-      icon: ShieldCheck,
       label: "Service account",
       tooltip:
         "ADC authenticates server-side. No user sign-in; every request uses the same Google credentials.",
+      dotClass: "bg-success",
     };
   }
   return {
-    icon: KeyRound,
     label: "User OAuth",
     tooltip:
       "Signed-in user's Google token is forwarded to the MCP server. Each caller acts as themselves.",
+    dotClass: "bg-primary",
   };
 }
 
 /**
- * Renders the AUTH_MODE pill and the model selector dropdown side by
- * side. Kept compact to fit comfortably in the app bar.
+ * Composes the auth-mode indicator, a divider, and the model picker.
+ * Intentionally grouped in one component so the three elements keep a
+ * consistent gap and divider height as the bar evolves.
  */
 export function ModeBadges() {
   const mode = useMode();
-  const auth = authFlavor(mode.authMode);
+  const flavor = authFlavor(mode.authMode);
 
   return (
-    <div className="flex items-center gap-1.5 max-sm:hidden" aria-label="Active flavor">
-      <ModePill flavor={auth} />
+    <div className="flex items-center gap-3 max-sm:hidden" aria-label="Active flavor">
+      <FlavorIndicator flavor={flavor} />
+      <span className="bg-on-surface/10 h-4 w-px shrink-0" aria-hidden="true" />
       <ModelSelector />
     </div>
   );
 }
 
-function ModePill({ flavor }: { flavor: Flavor }) {
+function FlavorIndicator({ flavor }: { flavor: FlavorCopy }) {
   const [show, setShow] = useState(false);
-  const Icon = flavor.icon;
   return (
-    <span className="relative">
+    <span className="relative max-md:hidden">
       <button
         type="button"
         onMouseEnter={() => setShow(true)}
         onMouseLeave={() => setShow(false)}
         onFocus={() => setShow(true)}
         onBlur={() => setShow(false)}
-        aria-describedby={`mode-tooltip-${flavor.label}`}
-        className="state-layer bg-surface-dim text-on-surface-variant ring-on-surface/10 inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[0.75rem] font-medium ring-1"
+        aria-describedby={`flavor-tooltip-${flavor.label}`}
+        className="text-on-surface-muted hover:text-on-surface inline-flex items-center gap-1.5 text-xs"
       >
-        <Icon className="text-primary size-3" aria-hidden="true" />
-        {flavor.label}
+        <span className={`${flavor.dotClass} size-1.5 shrink-0 rounded-full`} aria-hidden="true" />
+        <span className="font-medium">{flavor.label}</span>
       </button>
       {show && (
         <span
-          id={`mode-tooltip-${flavor.label}`}
+          id={`flavor-tooltip-${flavor.label}`}
           role="tooltip"
           className="bg-on-surface text-surface ring-on-surface/10 pointer-events-none absolute top-full left-1/2 z-30 mt-1.5 w-64 -translate-x-1/2 rounded-[var(--radius-xs)] px-2 py-1.5 text-[0.6875rem] leading-4 shadow-[var(--shadow-elevation-2)] ring-1"
         >

@@ -126,11 +126,15 @@ export function ModelSelector() {
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label={`Current model: ${selectedOption.label}. Click to change.`}
-        className="state-layer bg-surface-dim text-on-surface ring-on-surface/10 inline-flex h-7 items-center gap-1.5 rounded-full pr-2 pl-2.5 text-[0.75rem] font-medium ring-1"
+        className="state-layer text-on-surface ring-on-surface/10 hover:bg-surface-dim data-open:bg-surface-dim inline-flex h-8 items-center gap-2 rounded-[var(--radius-sm)] py-1.5 pr-2 pl-3 text-[0.8125rem] font-medium ring-1"
+        data-open={isOpen ? "" : undefined}
       >
-        <Sparkles className="text-primary size-3" aria-hidden="true" />
+        <Sparkles className="text-primary size-3.5" aria-hidden="true" />
         <span className="max-w-[18ch] truncate">{selectedOption.label}</span>
-        <ChevronDown className="text-on-surface-muted size-3" aria-hidden="true" />
+        <ChevronDown
+          className={`text-on-surface-muted size-3.5 transition-transform ${isOpen ? "rotate-180" : ""}`}
+          aria-hidden="true"
+        />
       </button>
 
       {isOpen && (
