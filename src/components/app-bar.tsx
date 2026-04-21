@@ -31,12 +31,16 @@ export function AppBar() {
         <Link
           href="/"
           aria-label="Pocket CEP homepage"
-          className="flex shrink-0 flex-col justify-center leading-none"
+          className="flex shrink-0 items-center gap-3"
         >
-          <span className="text-on-surface text-[0.9375rem] font-semibold tracking-tight">
+          <span className="text-on-surface text-base font-semibold tracking-tight">
             Pocket CEP
           </span>
-          <span className="text-on-surface-muted mt-0.5 text-[0.625rem] font-medium tracking-wide uppercase max-lg:hidden">
+          <span
+            className="bg-on-surface/10 h-4 w-px shrink-0 max-lg:hidden"
+            aria-hidden="true"
+          />
+          <span className="text-on-surface-variant text-[0.8125rem] max-lg:hidden">
             Chrome Enterprise Premium
           </span>
         </Link>
