@@ -9,6 +9,13 @@ import { Bot, ChevronDown, ChevronRight, Copy, Check, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
+import { cn } from "@/lib/cn";
+import { isToolUIPart, getToolName } from "ai";
+import type { UIMessage } from "ai";
+import { toolPartLabel, type InvocationPart } from "@/lib/tool-part";
+import { reportAuthErrorGlobally } from "@/lib/auth-aware-fetch";
+import { isAuthErrorPayload, type AuthErrorPayload } from "@/lib/auth-errors";
+import { JsonTree } from "./json-tree";
 
 /**
  * Shared markdown plugins. `remark-breaks` converts single newlines
@@ -18,13 +25,6 @@ import remarkBreaks from "remark-breaks";
  * one-line-per-fact formatting that relied on that visual.
  */
 const MARKDOWN_PLUGINS = [remarkGfm, remarkBreaks];
-import { cn } from "@/lib/cn";
-import { isToolUIPart, getToolName } from "ai";
-import type { UIMessage } from "ai";
-import { toolPartLabel, type InvocationPart } from "@/lib/tool-part";
-import { reportAuthErrorGlobally } from "@/lib/auth-aware-fetch";
-import { isAuthErrorPayload, type AuthErrorPayload } from "@/lib/auth-errors";
-import { JsonTree } from "./json-tree";
 
 type ChatMessageProps = {
   message: UIMessage;
@@ -223,14 +223,36 @@ function ToolSection({
 }
 
 /**
- * Renders an MCP tool result's `content` array. Each block is treated
- * individually: fenced `json` code blocks are parsed and handed to
- * {@link JsonTree} for a collapsible tree view; everything else is
- * markdown-rendered. Non-text blocks fall through to JSON; arbitrary
- * non-array output shapes go to {@link ToolJson} so nothing silently
- * drops.
+ * Renders an MCP tool result's output. Handles three shapes:
+ *
+ * 1. `{ content, structuredContent }` — the MCP spec form. We render
+ *    the markdown narrative from `content` text blocks and use
+ *    {@link JsonTree} for the typed `structuredContent` payload,
+ *    skipping any JSON fences in `content` (they duplicate the
+ *    typed object).
+ * 2. A bare `content` array — markdown narrative, with any JSON
+ *    fences in text blocks promoted to {@link JsonTree}.
+ * 3. Anything else — raw JSON dump via {@link ToolJson}.
  */
 function ToolOutput({ value }: { value: unknown }) {
+  if (isMcpResultShape(value)) {
+    return (
+      <div className="flex flex-col gap-2">
+        {Array.isArray(value.content) &&
+          value.content.filter(isTextBlock).map((block, i) => {
+            // Skip JSON fences — the typed object below is the canonical source.
+            if (tryParseJsonFence(block.text).matched) return null;
+            return (
+              <div key={i} className="prose-chat">
+                <ReactMarkdown remarkPlugins={MARKDOWN_PLUGINS}>{block.text}</ReactMarkdown>
+              </div>
+            );
+          })}
+        <JsonTree value={value.structuredContent} defaultOpen />
+      </div>
+    );
+  }
+
   if (Array.isArray(value) && value.every(isTextBlock)) {
     return (
       <div className="flex flex-col gap-2">
@@ -249,6 +271,22 @@ function ToolOutput({ value }: { value: unknown }) {
     );
   }
   return <ToolJson value={value} />;
+}
+
+/**
+ * Narrows an unknown output value to the `{ content, structuredContent }`
+ * shape produced by our MCP tool wrapper.
+ */
+function isMcpResultShape(
+  value: unknown,
+): value is { content: unknown; structuredContent: unknown } {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    "content" in value &&
+    "structuredContent" in value
+  );
 }
 
 /**

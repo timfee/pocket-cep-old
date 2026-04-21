@@ -92,6 +92,17 @@ export async function getMcpToolsForAiSdk(
           if (authErr) throw authErr;
         }
 
+        /**
+         * When the MCP server emits `structuredContent` (per the MCP spec),
+         * we pass through both the content blocks and the typed payload.
+         * The inspector panel renders `output` as a raw dump so having
+         * `structuredContent` here makes it visible; the chat tool card
+         * prefers the typed object for its JSON tree view and avoids
+         * re-rendering the equivalent JSON fence baked into `content`.
+         */
+        if (result.structuredContent !== undefined) {
+          return { content: result.content, structuredContent: result.structuredContent };
+        }
         return result.content;
       },
     });
