@@ -12,19 +12,56 @@ import { useState, useCallback, useEffect } from "react";
 import { AppBar } from "@/components/app-bar";
 import { UserSelector } from "@/components/user-selector";
 import { ChatPanel } from "@/components/chat-panel";
-import { InspectorPanel } from "@/components/inspector-panel";
+import { InspectorList } from "@/components/inspector-panel";
 import { ActivityRoster } from "@/components/activity-roster";
+import { cn } from "@/lib/cn";
 import type { InvocationPart } from "@/lib/tool-part";
 import type { UserActivity } from "@/app/api/users/activity/route";
-import { ACTIVITY_CACHE_KEY, USER_SEARCH_INPUT_ID } from "@/lib/constants";
-import { Wrench, Eraser } from "lucide-react";
+import { ACTIVITY_CACHE_KEY, SIDEBAR_COLLAPSED_KEY, USER_SEARCH_INPUT_ID } from "@/lib/constants";
+import { Activity, Eraser, Wrench } from "lucide-react";
+
+/**
+ * Identifiers for the two views inside the left rail. We track this
+ * as state on the dashboard so other surfaces (e.g. a future "open
+ * inspector on tool call" affordance) can flip the active tab.
+ */
+type SidebarTab = "activity" | "inspector";
 
 export default function DashboardPage() {
   const [selectedUser, setSelectedUser] = useState("");
-  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("activity");
   const [toolInvocations, setToolInvocations] = useState<InvocationPart[]>([]);
   const [activity, setActivity] = useState<Record<string, UserActivity>>({});
   const [isActivityLoading, setIsActivityLoading] = useState(true);
+  /**
+   * Sidebar collapse state. SSR-safe default is `false` so the server-
+   * rendered markup matches the most common client state. We hydrate
+   * the persisted preference from localStorage in an effect below to
+   * avoid a hydration mismatch.
+   */
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  const toggleSidebar = useCallback(() => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        // ignore — preference simply won't persist
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (stored === "1") setIsSidebarCollapsed(true);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const handleToolInvocation = useCallback((part: InvocationPart) => {
     const id = part.toolCallId;
@@ -38,8 +75,6 @@ export default function DashboardPage() {
       return next;
     });
   }, []);
-
-  const toggleInspector = useCallback(() => setInspectorOpen((v) => !v), []);
 
   /**
    * The sidebar and the selector both use the same activity map. We
@@ -120,62 +155,103 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <div className="isolate flex h-dvh flex-col">
-      <AppBar />
+    <div className="isolate flex min-h-0 flex-1 flex-col">
+      <AppBar onToggleSidebar={toggleSidebar} isSidebarCollapsed={isSidebarCollapsed} />
 
       <div className="mx-auto flex w-full max-w-[1680px] flex-1 overflow-hidden">
-        <aside className="bg-surface border-on-surface/10 flex min-h-0 w-72 shrink-0 flex-col border-r max-md:hidden lg:w-80">
+        <aside
+          id="dashboard-sidebar"
+          aria-label="Investigation rail"
+          hidden={isSidebarCollapsed}
+          className="bg-surface border-on-surface/10 flex min-h-0 w-72 shrink-0 flex-col border-r max-md:hidden lg:w-80"
+        >
+          <section aria-label="User search" className="border-on-surface/10 border-b px-4 py-4">
+            <UserSelector
+              selectedUser={selectedUser}
+              onUserChange={setSelectedUser}
+              activity={activity}
+            />
+          </section>
+
+          <div
+            role="tablist"
+            aria-label="Sidebar views"
+            className="border-on-surface/10 flex shrink-0 gap-1 border-b px-2 py-2"
+          >
+            <SidebarTabButton
+              id="tab-activity"
+              panelId="panel-activity"
+              isActive={sidebarTab === "activity"}
+              onSelect={() => setSidebarTab("activity")}
+              icon={Activity}
+              label="Activity"
+            />
+            <SidebarTabButton
+              id="tab-inspector"
+              panelId="panel-inspector"
+              isActive={sidebarTab === "inspector"}
+              onSelect={() => setSidebarTab("inspector")}
+              icon={Wrench}
+              label="Inspector"
+              count={toolInvocations.length}
+            />
+          </div>
+
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-            <section className="flex flex-col gap-2 px-4 py-4">
-              <UserSelector
-                selectedUser={selectedUser}
-                onUserChange={setSelectedUser}
-                activity={activity}
-              />
-            </section>
-
-            <section className="border-on-surface/10 flex flex-col gap-2 border-t px-4 py-4">
-              <header className="flex items-baseline justify-between">
-                <h2 className="text-on-surface text-sm font-medium">Recent activity</h2>
-                <span className="text-on-surface-muted text-xs tabular-nums">10 days</span>
-              </header>
-              <ActivityRoster
-                activity={activity}
-                selectedUser={selectedUser}
-                isLoading={isActivityLoading}
-                onPick={setSelectedUser}
-              />
-            </section>
+            {sidebarTab === "activity" ? (
+              <section
+                id="panel-activity"
+                role="tabpanel"
+                aria-labelledby="tab-activity"
+                className="flex flex-col gap-2 px-4 py-4"
+              >
+                <header className="flex items-baseline justify-between">
+                  <h2 id="recent-activity-heading" className="text-on-surface text-sm font-medium">
+                    Recent activity
+                  </h2>
+                  <span className="text-on-surface-muted text-xs tabular-nums">10 days</span>
+                </header>
+                <ActivityRoster
+                  activity={activity}
+                  selectedUser={selectedUser}
+                  isLoading={isActivityLoading}
+                  onPick={setSelectedUser}
+                />
+              </section>
+            ) : (
+              <section
+                id="panel-inspector"
+                role="tabpanel"
+                aria-labelledby="tab-inspector"
+                className="flex flex-col gap-2 px-3 py-3"
+              >
+                <header className="flex items-baseline justify-between px-1">
+                  <h2 className="text-on-surface text-sm font-medium">MCP inspector</h2>
+                  <span className="text-on-surface-muted text-xs tabular-nums">
+                    {toolInvocations.length} call{toolInvocations.length === 1 ? "" : "s"}
+                  </span>
+                </header>
+                <InspectorList invocations={toolInvocations} />
+              </section>
+            )}
           </div>
 
-          <div className="border-on-surface/10 flex flex-col gap-0.5 border-t px-2 py-2">
-            <button
-              type="button"
-              onClick={toggleInspector}
-              className="state-layer text-on-surface-variant flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-sm"
-            >
-              <Wrench className="size-4" />
-              <span>MCP inspector</span>
-              {toolInvocations.length > 0 && (
-                <span className="bg-primary-light text-primary ml-auto rounded-full px-1.5 py-0.5 text-xs font-medium tabular-nums">
-                  {toolInvocations.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setToolInvocations([])}
-              disabled={toolInvocations.length === 0}
-              className="state-layer text-on-surface-muted flex items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-sm disabled:opacity-40"
-            >
-              <Eraser className="size-4" />
-              <span>Clear inspector</span>
-            </button>
-          </div>
+          {sidebarTab === "inspector" && (
+            <footer className="border-on-surface/10 border-t px-2 py-2">
+              <button
+                type="button"
+                onClick={() => setToolInvocations([])}
+                disabled={toolInvocations.length === 0}
+                className="state-layer text-on-surface-variant flex w-full items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-sm disabled:opacity-40"
+              >
+                <Eraser className="size-4" aria-hidden="true" />
+                <span>Clear invocations</span>
+              </button>
+            </footer>
+          )}
         </aside>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="bg-surface border-on-surface/10 border-b p-2 md:hidden">
             <UserSelector
               selectedUser={selectedUser}
@@ -189,14 +265,63 @@ export default function DashboardPage() {
             onToolInvocation={handleToolInvocation}
             onClearSelectedUser={() => setSelectedUser("")}
           />
-        </div>
-
-        <InspectorPanel
-          invocations={toolInvocations}
-          isOpen={inspectorOpen}
-          onToggle={toggleInspector}
-        />
+        </main>
       </div>
     </div>
+  );
+}
+
+/**
+ * Single tab in the sidebar tablist. Encapsulates ARIA wiring and the
+ * optional count badge so the tablist markup stays scannable.
+ */
+type SidebarTabButtonProps = {
+  id: string;
+  panelId: string;
+  isActive: boolean;
+  onSelect: () => void;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  count?: number;
+};
+
+function SidebarTabButton({
+  id,
+  panelId,
+  isActive,
+  onSelect,
+  icon: Icon,
+  label,
+  count,
+}: SidebarTabButtonProps) {
+  return (
+    <button
+      type="button"
+      id={id}
+      role="tab"
+      aria-selected={isActive}
+      aria-controls={panelId}
+      tabIndex={isActive ? 0 : -1}
+      onClick={onSelect}
+      className={cn(
+        "state-layer flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-xs)] px-2 py-1.5 text-xs font-medium",
+        isActive
+          ? "bg-primary-light text-primary"
+          : "text-on-surface-variant hover:text-on-surface",
+      )}
+    >
+      <Icon className="size-3.5" aria-hidden="true" />
+      <span>{label}</span>
+      {typeof count === "number" && count > 0 && (
+        <span
+          className={cn(
+            "rounded-full px-1.5 py-0.5 text-[0.625rem] tabular-nums",
+            isActive ? "bg-primary text-on-primary" : "bg-surface-dim text-on-surface-variant",
+          )}
+        >
+          {count}
+        </span>
+      )}
+    </button>
   );
 }

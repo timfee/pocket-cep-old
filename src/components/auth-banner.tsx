@@ -62,7 +62,7 @@ export function AuthBanner() {
     <div
       role="alert"
       aria-live="polite"
-      className="bg-warning-light text-warning ring-warning/30 flex flex-col gap-2 px-4 py-2.5 text-sm ring-1 sm:flex-row sm:items-center"
+      className="bg-warning-light text-warning ring-warning/30 flex shrink-0 flex-col gap-2 px-4 py-2 text-sm ring-1 sm:flex-row sm:items-center"
     >
       <ShieldAlert className="size-4 shrink-0" aria-hidden="true" />
       <div className="flex-1">

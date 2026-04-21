@@ -30,6 +30,12 @@ export const USER_SEARCH_INPUT_ID = "user-search";
 export const ACTIVITY_CACHE_KEY = "cep_activity_cache";
 
 /**
+ * localStorage key for the sidebar's collapsed state. Persists across
+ * reloads so the layout matches the user's last preference.
+ */
+export const SIDEBAR_COLLAPSED_KEY = "cep_sidebar_collapsed";
+
+/**
  * Structured log prefixes for each subsystem. These make it easy to
  * filter server logs by component (e.g. `grep "\[mcp\]"`).
  */

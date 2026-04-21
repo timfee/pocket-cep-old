@@ -1,55 +1,45 @@
 /**
- * @file MCP Inspector panel showing tool invocations from the AI SDK.
+ * @file MCP Inspector view of tool invocations from the AI SDK.
+ *
+ * Exposes `InspectorList`, a self-contained scrollable list of tool
+ * calls and their state. The dashboard mounts it inside the sidebar's
+ * "Inspector" tab so we don't need a third top-level column.
  */
 
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, X, Wrench } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { getToolName } from "ai";
 import { cn } from "@/lib/cn";
 import { toolPartLabel, type InvocationPart } from "@/lib/tool-part";
 
-type InspectorPanelProps = {
+type InspectorListProps = {
   invocations: InvocationPart[];
-  isOpen: boolean;
-  onToggle: () => void;
 };
 
-export function InspectorPanel({ invocations, isOpen, onToggle }: InspectorPanelProps) {
-  if (!isOpen) return null;
+/**
+ * Renders the list of MCP tool invocations, or a friendly empty
+ * message. Layout-agnostic: callers control width and surrounding
+ * chrome (headers, tabs, footers).
+ */
+export function InspectorList({ invocations }: InspectorListProps) {
+  if (invocations.length === 0) {
+    return (
+      <p className="text-on-surface-muted px-2 py-3 text-center text-[11px]">
+        Tool invocations will appear here as the agent calls MCP tools.
+      </p>
+    );
+  }
 
   return (
-    <aside className="bg-surface border-on-surface/10 flex min-h-0 w-72 shrink-0 flex-col border-l lg:w-80">
-      <div className="border-on-surface/10 flex items-center justify-between border-b px-3 py-2">
-        <div className="flex items-center gap-1.5">
-          <Wrench className="text-primary size-3.5" />
-          <h2 className="text-on-surface text-xs font-semibold">MCP Inspector</h2>
-        </div>
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-label="Close inspector"
-          className="state-layer text-on-surface-variant hover:text-on-surface rounded-[var(--radius-xs)] p-1"
-        >
-          <X className="size-3.5" />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-2">
-        {invocations.length === 0 ? (
-          <p className="text-on-surface-muted px-2 py-3 text-center text-[11px]">
-            Tool invocations will appear here as the agent calls MCP tools.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {invocations.map((inv, i) => (
-              <InvocationCard key={inv.toolCallId ?? i} invocation={inv} index={i} />
-            ))}
-          </div>
-        )}
-      </div>
-    </aside>
+    <ol role="list" className="flex flex-col gap-1.5">
+      {invocations.map((inv, i) => (
+        <li key={inv.toolCallId ?? i}>
+          <InvocationCard invocation={inv} index={i} />
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -64,16 +54,17 @@ function InvocationCard({ invocation, index }: { invocation: InvocationPart; ind
         : "bg-primary/20 text-primary";
 
   return (
-    <div className="bg-surface-dim ring-on-surface/10 rounded-[var(--radius-sm)] ring-1">
+    <article className="bg-surface-dim ring-on-surface/10 rounded-[var(--radius-sm)] ring-1">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
         className="state-layer flex w-full items-center gap-1.5 rounded-[var(--radius-sm)] px-2 py-1.5 text-left"
       >
         {expanded ? (
-          <ChevronDown className="text-on-surface-muted size-3" />
+          <ChevronDown className="text-on-surface-muted size-3" aria-hidden="true" />
         ) : (
-          <ChevronRight className="text-on-surface-muted size-3" />
+          <ChevronRight className="text-on-surface-muted size-3" aria-hidden="true" />
         )}
         <span className="text-on-surface flex-1 truncate font-mono text-[11px]">
           {getToolName(invocation)}
@@ -108,6 +99,6 @@ function InvocationCard({ invocation, index }: { invocation: InvocationPart; ind
           </pre>
         </div>
       )}
-    </div>
+    </article>
   );
 }

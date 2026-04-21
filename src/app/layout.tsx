@@ -61,7 +61,7 @@ export default function RootLayout({
 
   return (
     <html lang="en" className={`${roboto.variable} ${robotoMono.variable} h-full`}>
-      <body className="flex min-h-dvh flex-col antialiased">
+      <body className="flex h-dvh flex-col overflow-hidden antialiased">
         <ModeProvider value={mode}>
           <AuthHealthProvider>
             <AuthBanner />

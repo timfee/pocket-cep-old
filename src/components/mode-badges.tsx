@@ -81,7 +81,7 @@ function ModePill({ flavor }: { flavor: Flavor }) {
         onFocus={() => setShow(true)}
         onBlur={() => setShow(false)}
         aria-describedby={`mode-tooltip-${flavor.label}`}
-        className="state-layer bg-surface-dim text-on-surface-variant ring-on-surface/10 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium ring-1"
+        className="state-layer bg-surface-dim text-on-surface-variant ring-on-surface/10 inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[0.6875rem] font-medium ring-1"
       >
         <Icon className="text-primary size-3" aria-hidden="true" />
         {flavor.label}
