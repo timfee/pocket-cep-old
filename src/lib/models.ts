@@ -45,8 +45,21 @@ export type ModelOption = {
 };
 
 /**
- * The mainstream five. Order here is the default ranking before
- * "available first" re-sorting.
+ * The mainstream five, as of April 2026. Order here is the default
+ * ranking before "available first" re-sorting.
+ *
+ * - **Claude Opus 4.7** — current Anthropic flagship; stepped up from
+ *   Opus 4.6 in early 2026 for agentic coding.
+ * - **Claude Sonnet 4.6** — current balanced default; Anthropic
+ *   intentionally did not bump Sonnet alongside the Opus 4.7 release.
+ * - **GPT-5.4** — current OpenAI flagship (alias `gpt-5.4`).
+ * - **Gemini 3.1 Pro Preview** — latest Gemini 3 series flagship.
+ * - **Gemini 3 Flash Preview** — fast/cheap Gemini 3 variant.
+ *
+ * When Anthropic/OpenAI/Google ship a new mainstream model, update
+ * the ID + label here. `getDefaultModelFor` asserts that the default
+ * still exists in this list, so removing the current defaults
+ * without updating them will fail at first access.
  */
 export const MODEL_OPTIONS: readonly ModelOption[] = [
   {
@@ -54,7 +67,7 @@ export const MODEL_OPTIONS: readonly ModelOption[] = [
     label: "Claude Opus 4.7",
     provider: "anthropic",
     envKey: "ANTHROPIC_API_KEY",
-    description: "Anthropic's most capable model.",
+    description: "Anthropic's most capable model — strongest at agentic coding.",
   },
   {
     id: "claude-sonnet-4-6",
@@ -64,25 +77,25 @@ export const MODEL_OPTIONS: readonly ModelOption[] = [
     description: "Balanced speed and intelligence from Anthropic.",
   },
   {
-    id: "gpt-5",
-    label: "GPT-5",
+    id: "gpt-5.4",
+    label: "GPT-5.4",
     provider: "openai",
     envKey: "OPENAI_API_KEY",
-    description: "OpenAI's flagship reasoning model.",
+    description: "OpenAI's flagship reasoning + coding model.",
   },
   {
-    id: "gemini-2.5-pro",
-    label: "Gemini 2.5 Pro",
+    id: "gemini-3.1-pro-preview",
+    label: "Gemini 3.1 Pro",
     provider: "google",
     envKey: "GOOGLE_AI_API_KEY",
-    description: "Google's flagship multimodal model.",
+    description: "Google's latest Gemini 3 series flagship (preview).",
   },
   {
-    id: "gemini-2.5-flash",
-    label: "Gemini 2.5 Flash",
+    id: "gemini-3-flash-preview",
+    label: "Gemini 3 Flash",
     provider: "google",
     envKey: "GOOGLE_AI_API_KEY",
-    description: "Fast and efficient Gemini variant.",
+    description: "Fast, low-cost Gemini 3 variant (preview).",
   },
 ];
 
@@ -103,7 +116,7 @@ export function getModelById(id: string): ModelOption | undefined {
  */
 const DEFAULT_MODEL_IDS = {
   claude: "claude-sonnet-4-6",
-  gemini: "gemini-2.5-flash",
+  gemini: "gemini-3-flash-preview",
 } as const;
 
 /**
