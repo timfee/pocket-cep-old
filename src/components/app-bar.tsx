@@ -34,12 +34,12 @@ export function AppBar() {
           className="flex shrink-0 items-center gap-3"
         >
           <span className="text-on-surface text-base font-semibold tracking-tight">
-            Pocket CEP
+            Pocket{" "}
+            <span className="from-primary to-primary/70 bg-linear-to-br bg-clip-text text-transparent">
+              CEP
+            </span>
           </span>
-          <span
-            className="bg-on-surface/10 h-4 w-px shrink-0 max-lg:hidden"
-            aria-hidden="true"
-          />
+          <span className="bg-on-surface/10 h-4 w-px shrink-0 max-lg:hidden" aria-hidden="true" />
           <span className="text-on-surface-variant text-[0.8125rem] max-lg:hidden">
             Chrome Enterprise Premium
           </span>
@@ -53,6 +53,13 @@ export function AppBar() {
           <SessionChip isAnonymous={!!isAnonymous} email={user?.email} onSignOut={handleSignOut} />
         </nav>
       </div>
+
+      {/* Whisper-thin gradient strip along the bar's bottom edge — feels more
+          intentional than a flat 1px border without overpowering the chrome. */}
+      <div
+        aria-hidden="true"
+        className="from-primary/0 via-primary/20 to-primary/0 pointer-events-none absolute inset-x-0 -bottom-px h-px bg-linear-to-r"
+      />
     </header>
   );
 }

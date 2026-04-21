@@ -67,9 +67,15 @@ function FlavorIndicator({ flavor }: { flavor: FlavorCopy }) {
         onFocus={() => setShow(true)}
         onBlur={() => setShow(false)}
         aria-describedby={`flavor-tooltip-${flavor.label}`}
-        className="text-on-surface-muted hover:text-on-surface inline-flex items-center gap-1.5 text-xs"
+        className="text-on-surface-muted hover:text-on-surface inline-flex items-center gap-2 text-xs"
       >
-        <span className={`${flavor.dotClass} size-1.5 shrink-0 rounded-full`} aria-hidden="true" />
+        <span
+          className="relative inline-flex size-2.5 shrink-0 items-center justify-center"
+          aria-hidden="true"
+        >
+          <span className={`${flavor.dotClass} absolute inset-0 rounded-full opacity-25`} />
+          <span className={`${flavor.dotClass} size-1.5 rounded-full`} />
+        </span>
         <span className="font-medium">{flavor.label}</span>
       </button>
       {show && (
