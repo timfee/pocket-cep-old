@@ -179,10 +179,6 @@ export function ModelSelector() {
               </ModelGroup>
             )}
           </div>
-
-          <footer className="border-on-surface/10 bg-surface-dim/60 border-t px-3 py-1.5">
-            <p className="text-on-surface-muted text-[0.625rem]">Powered by Vercel AI SDK</p>
-          </footer>
         </div>
       )}
     </div>
