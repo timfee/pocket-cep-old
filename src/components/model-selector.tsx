@@ -238,34 +238,23 @@ function ReadyRow({
         aria-selected={isSelected}
         onClick={onSelect}
         className={cn(
-          "group flex w-full items-center gap-3 rounded-[var(--radius-sm)] px-2 py-2 text-left",
+          "group flex w-full items-baseline gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-left",
           isSelected ? "bg-primary-light" : "hover:bg-surface-dim",
         )}
       >
-        <ProviderMark provider={option.provider} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span
-              className={cn(
-                "truncate text-sm font-medium",
-                isSelected ? "text-primary" : "text-on-surface",
-              )}
-            >
-              {option.label}
-            </span>
-            {availability.byok && !availability.env && (
-              <span
-                className="text-on-surface-muted text-[0.625rem]"
-                title="Using your API key from this browser"
-              >
-                · your key
-              </span>
-            )}
-          </div>
-          <p className="text-on-surface-muted truncate text-[0.6875rem]">{option.description}</p>
-        </div>
+        <span
+          className={cn(
+            "shrink-0 text-[0.8125rem] font-medium",
+            isSelected ? "text-primary" : "text-on-surface",
+          )}
+        >
+          {option.label}
+        </span>
+        <span className="text-on-surface-muted min-w-0 flex-1 truncate text-[0.6875rem]">
+          {option.description}
+        </span>
         {isSelected ? (
-          <Check className="text-primary size-4 shrink-0" aria-hidden="true" />
+          <Check className="text-primary size-3.5 shrink-0 self-center" aria-hidden="true" />
         ) : availability.byok && !availability.env ? (
           <span
             role="button"
@@ -327,17 +316,18 @@ function NeedsKeyRow({
         onClick={onOpenEditor}
         aria-expanded={isEditing}
         className={cn(
-          "flex w-full items-center gap-3 rounded-[var(--radius-sm)] px-2 py-2 text-left",
+          "flex w-full items-baseline gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-left",
           isEditing ? "bg-surface-dim" : "hover:bg-surface-dim",
         )}
       >
-        <ProviderMark provider={option.provider} muted />
-        <div className="min-w-0 flex-1">
-          <p className="text-on-surface-variant truncate text-sm font-medium">{option.label}</p>
-          <p className="text-on-surface-muted truncate text-[0.6875rem]">{option.description}</p>
-        </div>
+        <span className="text-on-surface-variant shrink-0 text-[0.8125rem] font-medium">
+          {option.label}
+        </span>
+        <span className="text-on-surface-muted min-w-0 flex-1 truncate text-[0.6875rem]">
+          {option.description}
+        </span>
         {!isEditing && (
-          <span className="text-on-surface-muted ring-on-surface/15 inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[0.625rem] font-medium ring-1">
+          <span className="text-on-surface-muted ring-on-surface/15 inline-flex shrink-0 items-center gap-1 self-center rounded-full px-2 py-0.5 text-[0.625rem] font-medium ring-1">
             <Plus className="size-2.5" aria-hidden="true" />
             Add key
           </span>
@@ -352,26 +342,6 @@ function NeedsKeyRow({
         />
       )}
     </div>
-  );
-}
-
-/**
- * Small provider glyph — a rounded tile with the provider's initial.
- * `muted` tones the background down for non-ready rows so "Ready"
- * rows pop visually without needing a saturated badge.
- */
-function ProviderMark({ provider, muted = false }: { provider: ModelProvider; muted?: boolean }) {
-  const initial = PROVIDER_LABELS[provider][0];
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "inline-flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-xs)] font-mono text-[0.6875rem] font-semibold",
-        muted ? "bg-surface-container text-on-surface-muted" : "bg-primary-light text-primary",
-      )}
-    >
-      {initial}
-    </span>
   );
 }
 
