@@ -23,7 +23,6 @@ import { getActivitySafe } from "@/lib/activity-data";
  */
 export const dynamic = "force-dynamic";
 
-
 export default async function DashboardPage() {
   const initialActivity = await getActivitySafe();
   return <DashboardClient initialActivity={initialActivity} />;
