@@ -30,6 +30,13 @@ export type { Prompt, PromptMessage };
  */
 export type McpToolResult = {
   content: unknown;
+  /**
+   * Machine-readable structured payload when the MCP server emits one
+   * (MCP spec's `structuredContent`, used by cmcp's `formatToolResponse`
+   * helper). Forwarded for the inspector / UI to render typed data
+   * without re-parsing the text-fence JSON.
+   */
+  structuredContent?: unknown;
   isError: boolean;
   /** The raw JSON-RPC request we sent (for educational display). */
   rawRequest: Record<string, unknown>;
@@ -131,6 +138,7 @@ export async function callMcpTool(
       jsonrpc: "2.0",
       result: {
         content: result.content,
+        structuredContent: result.structuredContent,
         isError: result.isError ?? false,
       },
     };
@@ -139,6 +147,7 @@ export async function callMcpTool(
 
     return {
       content: result.content,
+      structuredContent: result.structuredContent,
       isError: Boolean(result.isError),
       rawRequest,
       rawResponse,

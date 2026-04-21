@@ -5,7 +5,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bot, Copy, Check, Zap } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, Copy, Check, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/cn";
@@ -126,18 +126,27 @@ function ToolPartCard({ part }: { part: InvocationPart }) {
 
   const errorText = "errorText" in part ? part.errorText : undefined;
   const authPayload = parseAuthPayload(errorText);
+  const output = "output" in part ? part.output : undefined;
+  const hasArgs = isNonEmptyObject(part.input);
+  const hasOutput = output !== undefined && output !== null;
 
   if (authPayload) {
     return <AuthToolCard payload={authPayload} />;
   }
 
   return (
-    <div className="bg-surface-dim ring-on-surface/10 my-1.5 rounded-[var(--radius-sm)] ring-1">
+    <div className="bg-surface-dim ring-on-surface/10 my-1.5 overflow-hidden rounded-[var(--radius-sm)] ring-1">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
+        aria-expanded={expanded}
+        className="state-layer flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
       >
+        {expanded ? (
+          <ChevronDown className="text-on-surface-muted size-3 shrink-0" aria-hidden="true" />
+        ) : (
+          <ChevronRight className="text-on-surface-muted size-3 shrink-0" aria-hidden="true" />
+        )}
         <span className="text-on-surface flex-1 truncate font-mono text-xs">
           {getToolName(part)}
         </span>
@@ -152,22 +161,93 @@ function ToolPartCard({ part }: { part: InvocationPart }) {
       </button>
 
       {expanded && (
-        <div className="border-on-surface/5 border-t px-2.5 py-2">
-          <pre className="bg-surface-container text-on-surface-variant overflow-x-auto rounded-[var(--radius-xs)] p-2.5 font-mono text-[0.6875rem] leading-4">
-            {JSON.stringify(
-              {
-                input: part.input,
-                output: "output" in part ? part.output : undefined,
-                errorText,
-              },
-              null,
-              2,
-            )}
-          </pre>
+        <div className="border-on-surface/5 flex flex-col gap-3 border-t px-3 py-2.5">
+          {hasArgs && (
+            <ToolSection title="Arguments">
+              <ToolJson value={part.input} />
+            </ToolSection>
+          )}
+
+          {hasOutput && (
+            <ToolSection title="Result">
+              <ToolOutput value={output} />
+            </ToolSection>
+          )}
+
+          {errorText && (
+            <ToolSection title="Error" tone="error">
+              <p className="text-error/90 leading-4 whitespace-pre-wrap">{String(errorText)}</p>
+            </ToolSection>
+          )}
         </div>
       )}
     </div>
   );
+}
+
+/**
+ * Common section wrapper for the expanded tool card. The inset
+ * border-left keeps the whole block visually subordinate to the
+ * assistant message it's nested inside.
+ */
+function ToolSection({
+  title,
+  tone = "default",
+  children,
+}: {
+  title: string;
+  tone?: "default" | "error";
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      className={cn("border-l-2 pl-3", tone === "error" ? "border-error/40" : "border-primary/30")}
+    >
+      <h4 className="text-on-surface-muted mb-1 text-[0.625rem] font-semibold tracking-wide uppercase">
+        {title}
+      </h4>
+      <div className="text-[0.75rem]">{children}</div>
+    </section>
+  );
+}
+
+/**
+ * Renders an MCP tool result's `content` array (text blocks with
+ * embedded markdown + JSON fences) as real markdown. Non-text blocks
+ * fall through to a JSON view. Arbitrary non-array output shapes land
+ * in the `ToolJson` fallback so we never silently drop data.
+ */
+function ToolOutput({ value }: { value: unknown }) {
+  if (Array.isArray(value) && value.every(isTextBlock)) {
+    return (
+      <div className="prose-chat">
+        {value.map((block, i) => (
+          <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
+            {block.text}
+          </ReactMarkdown>
+        ))}
+      </div>
+    );
+  }
+  return <ToolJson value={value} />;
+}
+
+function ToolJson({ value }: { value: unknown }) {
+  return (
+    <pre className="bg-surface-container text-on-surface-variant overflow-x-auto rounded-[var(--radius-xs)] p-2 font-mono text-[10px] leading-4">
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  );
+}
+
+function isTextBlock(x: unknown): x is { type: "text"; text: string } {
+  if (!x || typeof x !== "object") return false;
+  const rec = x as Record<string, unknown>;
+  return rec.type === "text" && typeof rec.text === "string";
+}
+
+function isNonEmptyObject(x: unknown): boolean {
+  return !!x && typeof x === "object" && !Array.isArray(x) && Object.keys(x).length > 0;
 }
 
 /**
