@@ -8,6 +8,16 @@ import { useEffect, useState } from "react";
 import { Bot, ChevronDown, ChevronRight, Copy, Check, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
+
+/**
+ * Shared markdown plugins. `remark-breaks` converts single newlines
+ * into `<br>` (hard line breaks). Without it, Markdown's default
+ * "soft break" behaviour collapses single `\n` inside a paragraph
+ * into a space — the MCP server ships tool-result summaries with
+ * one-line-per-fact formatting that relied on that visual.
+ */
+const MARKDOWN_PLUGINS = [remarkGfm, remarkBreaks];
 import { cn } from "@/lib/cn";
 import { isToolUIPart, getToolName } from "ai";
 import type { UIMessage } from "ai";
@@ -71,7 +81,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
             }
             return (
               <div key={`text-${i}`} className="prose-chat">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={MARKDOWN_PLUGINS}>{part.text}</ReactMarkdown>
               </div>
             );
           }
@@ -231,7 +241,7 @@ function ToolOutput({ value }: { value: unknown }) {
           }
           return (
             <div key={i} className="prose-chat">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.text}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={MARKDOWN_PLUGINS}>{block.text}</ReactMarkdown>
             </div>
           );
         })}
