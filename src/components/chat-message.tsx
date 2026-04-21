@@ -14,6 +14,7 @@ import type { UIMessage } from "ai";
 import { toolPartLabel, type InvocationPart } from "@/lib/tool-part";
 import { reportAuthErrorGlobally } from "@/lib/auth-aware-fetch";
 import { isAuthErrorPayload, type AuthErrorPayload } from "@/lib/auth-errors";
+import { JsonTree } from "./json-tree";
 
 type ChatMessageProps = {
   message: UIMessage;
@@ -212,24 +213,49 @@ function ToolSection({
 }
 
 /**
- * Renders an MCP tool result's `content` array (text blocks with
- * embedded markdown + JSON fences) as real markdown. Non-text blocks
- * fall through to a JSON view. Arbitrary non-array output shapes land
- * in the `ToolJson` fallback so we never silently drop data.
+ * Renders an MCP tool result's `content` array. Each block is treated
+ * individually: fenced `json` code blocks are parsed and handed to
+ * {@link JsonTree} for a collapsible tree view; everything else is
+ * markdown-rendered. Non-text blocks fall through to JSON; arbitrary
+ * non-array output shapes go to {@link ToolJson} so nothing silently
+ * drops.
  */
 function ToolOutput({ value }: { value: unknown }) {
   if (Array.isArray(value) && value.every(isTextBlock)) {
     return (
-      <div className="prose-chat">
-        {value.map((block, i) => (
-          <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
-            {block.text}
-          </ReactMarkdown>
-        ))}
+      <div className="flex flex-col gap-2">
+        {value.map((block, i) => {
+          const parsed = tryParseJsonFence(block.text);
+          if (parsed.matched) {
+            return <JsonTree key={i} value={parsed.value} defaultOpen />;
+          }
+          return (
+            <div key={i} className="prose-chat">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.text}</ReactMarkdown>
+            </div>
+          );
+        })}
       </div>
     );
   }
   return <ToolJson value={value} />;
+}
+
+/**
+ * If the text is *only* a ```json … ``` fenced block, returns the
+ * parsed value. Otherwise returns `matched: false`. Mixed markdown
+ * flows through to `ReactMarkdown` unchanged.
+ */
+function tryParseJsonFence(text: string): { matched: true; value: unknown } | { matched: false } {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("```json")) return { matched: false };
+  if (!trimmed.endsWith("```")) return { matched: false };
+  const body = trimmed.slice("```json".length, -"```".length).trim();
+  try {
+    return { matched: true, value: JSON.parse(body) };
+  } catch {
+    return { matched: false };
+  }
 }
 
 function ToolJson({ value }: { value: unknown }) {
