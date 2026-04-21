@@ -11,6 +11,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isToolUIPart } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import useSWR from "swr";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import {
@@ -75,47 +76,18 @@ function PromptBadge({ name, prominent = false }: { name: string; prominent?: bo
 
 export function ChatPanel({ selectedUser, onToolInvocation, onClearSelectedUser }: ChatPanelProps) {
   const [input, setInput] = useState("");
-  const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [promptExpanding, setPromptExpanding] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    /**
-     * Retry the prompts fetch a few times with backoff. `npm run dev:full`
-     * starts the Next.js app and the MCP server concurrently, so the
-     * first fetch can race the MCP server's boot and come back empty.
-     * Retrying until we get a non-empty list (or we run out of attempts)
-     * handles that startup window without blocking first paint.
-     */
-    const delaysMs = [0, 750, 1500, 3000];
-
-    async function loadPrompts() {
-      for (const delay of delaysMs) {
-        if (cancelled) return;
-        if (delay > 0) await new Promise((r) => setTimeout(r, delay));
-        try {
-          const res = await fetch("/api/prompts");
-          if (!res.ok) continue;
-          const body = (await res.json()) as { prompts?: Prompt[] };
-          const list = body.prompts ?? [];
-          if (cancelled) return;
-          if (list.length > 0) {
-            setPrompts(list);
-            return;
-          }
-        } catch {
-          // Network blip or dev-time HMR — try again on the next tick.
-        }
-      }
-    }
-
-    loadPrompts();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  /**
+   * Prompt catalog. SWR's built-in retry handles the dev-time race where
+   * `npm run dev:full` boots the Next app a beat before the MCP server,
+   * so the first fetch can come back 503. The provider's `errorRetryCount`
+   * already covers the previous hand-rolled backoff loop.
+   */
+  const { data: promptsData } = useSWR<{ prompts?: Prompt[] }>("/api/prompts", {
+    revalidateOnFocus: false,
+  });
+  const prompts = useMemo(() => promptsData?.prompts ?? [], [promptsData]);
 
   const selectedUserRef = useRef(selectedUser);
   useEffect(() => {

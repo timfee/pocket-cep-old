@@ -5,16 +5,21 @@
  * - surface users with activity even before the directory search returns
  * - show a dot + event count on users with recent Chrome events
  * - rank active users above inactive ones in search results
+ *
+ * Data fetching is driven by SWR (`useSWR`), which handles request
+ * deduping, focus revalidation, retry, and a localStorage cache via the
+ * provider in `swr-provider.tsx`. The 300 ms typeahead debounce lives
+ * in this component so SWR isn't asked to fetch a new key on every
+ * keystroke.
  */
 
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
+import useSWR from "swr";
 import { Search, Loader2, UserX, Check, Activity } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
-import { getErrorMessage } from "@/lib/errors";
-import { authAwareFetch } from "@/lib/auth-aware-fetch";
 import { isAuthErrorPayload, type AuthErrorPayload } from "@/lib/auth-errors";
 import { USER_SEARCH_INPUT_ID } from "@/lib/constants";
 import type { DirectoryUser } from "@/app/api/users/route";
@@ -27,81 +32,60 @@ type UserSelectorProps = {
   activity: Record<string, UserActivity>;
 };
 
-type SearchState = "idle" | "loading" | "results" | "empty" | "error";
+/**
+ * Response shape from `GET /api/users`.
+ */
+type UsersResponse = { users?: unknown };
+
+/**
+ * SWR errors throw plain `Error`. The default fetcher attaches the
+ * AuthErrorPayload (when present) so this component can show the
+ * structured remedy in its dropdown without re-fetching.
+ */
+type SwrError = Error & { authPayload?: AuthErrorPayload };
 
 export function UserSelector({ selectedUser, onUserChange, activity }: UserSelectorProps) {
   const [query, setQuery] = useState(selectedUser);
-  const [users, setUsers] = useState<DirectoryUser[]>([]);
-  const [state, setState] = useState<SearchState>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [authPayload, setAuthPayload] = useState<AuthErrorPayload | null>(null);
+  const [debouncedQuery, setDebouncedQuery] = useState(selectedUser);
   const [isOpen, setIsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const abortRef = useRef<AbortController>(null);
-  const requestIdRef = useRef(0);
 
-  const search = useCallback(async (q: string) => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+  /**
+   * Local-first search shortcut: very short prefixes (≤ 2 chars) hit
+   * thousands of users in any real org. Filtering the cached activity
+   * map locally returns instant results for the most common keystrokes
+   * — no debounce wait, no Directory API call, no server round-trip.
+   * Once the prefix grows past 2 chars we hand off to the server
+   * (Directory's substring matching beats local-only filtering).
+   */
+  const useLocalSearch = debouncedQuery.length > 0 && debouncedQuery.length <= 2;
+  const { data, error, isLoading, mutate } = useSWR<UsersResponse, SwrError>(
+    useLocalSearch ? null : `/api/users?q=${encodeURIComponent(debouncedQuery)}`,
+    { keepPreviousData: true },
+  );
 
-    const id = ++requestIdRef.current;
-    setState("loading");
-    setError(null);
-    setAuthPayload(null);
-
-    try {
-      const response = await authAwareFetch(`/api/users?q=${encodeURIComponent(q)}`, {
-        signal: controller.signal,
-      });
-
-      if (id !== requestIdRef.current) return;
-
-      if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as {
-          error?: string | AuthErrorPayload;
-        };
-        if (response.status === 401 && isAuthErrorPayload(body.error)) {
-          setAuthPayload(body.error);
-          setError(body.error.remedy);
-          setState("error");
-          return;
-        }
-        throw new Error(typeof body.error === "string" ? body.error : `HTTP ${response.status}`);
-      }
-
-      const body: unknown = await response.json();
-      const list = extractUserList(body);
-
-      if (id !== requestIdRef.current) return;
-
-      setUsers(list);
-      setState(list.length > 0 ? "results" : "empty");
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      setError(getErrorMessage(err));
-      setState("error");
-    }
-  }, []);
+  const users = useLocalSearch
+    ? localFilterFromActivity(activity, debouncedQuery)
+    : extractUserList(data);
+  const authPayload =
+    error?.authPayload && isAuthErrorPayload(error.authPayload) ? error.authPayload : null;
 
   const handleQueryChange = (value: string) => {
     setQuery(value);
     setIsOpen(true);
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => search(value), 300);
+    debounceRef.current = setTimeout(() => setDebouncedQuery(value), 300);
   };
 
   useEffect(() => {
-    search("");
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
-      abortRef.current?.abort();
     };
-  }, [search]);
+  }, []);
 
   const selectUser = (email: string) => {
     onUserChange(email);
@@ -134,8 +118,12 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
    * empty and directory results don't cover all active users, synthesize
    * minimal entries for the active-but-unseen users so admins can still
    * pick them from the initial dropdown.
+   *
+   * React Compiler memoizes this for us; manual `useMemo` here trips
+   * the `react-hooks/preserve-manual-memoization` rule because the
+   * compiler can't statically verify the deps cover the closure.
    */
-  const rankedUsers = useMemo<DirectoryUser[]>(() => {
+  const rankedUsers: DirectoryUser[] = (() => {
     const byEmail = new Map<string, DirectoryUser>();
     for (const u of users) byEmail.set(u.email.toLowerCase(), u);
 
@@ -153,9 +141,12 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
       if (aCount !== bCount) return bCount - aCount;
       return a.email.localeCompare(b.email);
     });
-  }, [users, activity, query]);
+  })();
 
   const isCredentialError = authPayload !== null;
+  const showLoading = isLoading && users.length === 0;
+  const showError = !!error && !isLoading;
+  const isEmptyResults = !isLoading && !error && users.length === 0 && rankedUsers.length === 0;
 
   return (
     <div className="relative flex flex-col gap-1.5">
@@ -165,11 +156,7 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
 
       <div className="relative">
         <div className="text-on-surface-muted pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2">
-          {state === "loading" ? (
-            <Loader2 className="spin-slow size-3.5" />
-          ) : (
-            <Search className="size-3.5" />
-          )}
+          {isLoading ? <Loader2 className="spin-slow size-3.5" /> : <Search className="size-3.5" />}
         </div>
 
         <input
@@ -205,14 +192,16 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
 
         {isOpen && (
           <div className="bg-surface ring-on-surface/10 absolute top-full left-0 z-20 mt-1 w-full overflow-hidden rounded-[var(--radius-sm)] shadow-[var(--shadow-elevation-2)] ring-1">
-            {state === "loading" && users.length === 0 && <LoadingSkeleton />}
+            {showLoading && <LoadingSkeleton />}
 
-            {state === "error" && (
+            {showError && (
               <div className="px-3 py-3">
                 <p className="text-error text-xs font-medium">
                   {isCredentialError ? "Credential Error" : "Search Failed"}
                 </p>
-                <p className="text-error/80 mt-1 text-[11px] leading-4">{error}</p>
+                <p className="text-error/80 mt-1 text-[11px] leading-4">
+                  {authPayload?.remedy ?? error?.message}
+                </p>
                 {authPayload?.command && (
                   <code className="bg-surface-container text-on-surface-variant mt-1.5 block rounded-[var(--radius-xs)] px-2 py-1 font-mono text-[11px]">
                     {authPayload.command}
@@ -220,7 +209,7 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
                 )}
                 <button
                   type="button"
-                  onMouseDown={() => search(query)}
+                  onMouseDown={() => mutate()}
                   className="state-layer text-primary mt-2 rounded-[var(--radius-xs)] px-2 py-1 text-xs font-medium"
                 >
                   Retry
@@ -228,9 +217,9 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
               </div>
             )}
 
-            {state === "empty" && rankedUsers.length === 0 && (
+            {isEmptyResults && (
               <div className="flex flex-col items-center gap-1.5 px-3 py-4 text-center">
-                <UserX className="text-on-surface-muted size-5" />
+                <UserX className="text-on-surface-muted size-5" aria-hidden="true" />
                 <p className="text-on-surface-muted text-xs">
                   {query ? `No users matching "${query}"` : "No users found in this org"}
                 </p>
@@ -253,7 +242,7 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
                       )}
                     >
                       {user.email === selectedUser ? (
-                        <Check className="text-primary size-3.5 shrink-0" />
+                        <Check className="text-primary size-3.5 shrink-0" aria-hidden="true" />
                       ) : act ? (
                         <span
                           className="bg-primary size-1.5 shrink-0 rounded-full"
@@ -273,7 +262,7 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
                           className="text-primary flex shrink-0 items-center gap-1 text-xs tabular-nums"
                           title={`${act.eventCount} recent event${act.eventCount === 1 ? "" : "s"}`}
                         >
-                          <Activity className="size-3" />
+                          <Activity className="size-3" aria-hidden="true" />
                           {act.eventCount}
                         </span>
                       )}
@@ -305,6 +294,26 @@ function extractUserList(body: unknown): DirectoryUser[] {
     (u): u is DirectoryUser =>
       !!u && typeof u === "object" && typeof u.email === "string" && typeof u.name === "string",
   );
+}
+
+/**
+ * Builds a `DirectoryUser[]` from the activity map for short-prefix
+ * local search. Returns up to 20 entries whose lowercase email starts
+ * with the prefix. We don't have name data here — that's fine because
+ * the prefix is short enough that the email match is the signal.
+ */
+function localFilterFromActivity(
+  activity: Record<string, UserActivity>,
+  prefix: string,
+): DirectoryUser[] {
+  const lower = prefix.toLowerCase();
+  const matches: DirectoryUser[] = [];
+  for (const email of Object.keys(activity)) {
+    if (!email.startsWith(lower)) continue;
+    matches.push({ email, name: "", suspended: false });
+    if (matches.length >= 20) break;
+  }
+  return matches;
 }
 
 function LoadingSkeleton() {

@@ -12,6 +12,7 @@ import { Roboto, Roboto_Mono } from "next/font/google";
 import { AuthHealthProvider } from "@/components/auth-health-provider";
 import { AuthBanner } from "@/components/auth-banner";
 import { ModeProvider } from "@/components/mode-provider";
+import { SwrProvider } from "@/components/swr-provider";
 import { getEnv } from "@/lib/env";
 import { DEFAULT_MODELS } from "@/lib/constants";
 import "./globals.css";
@@ -64,8 +65,10 @@ export default function RootLayout({
       <body className="flex h-dvh flex-col overflow-hidden antialiased">
         <ModeProvider value={mode}>
           <AuthHealthProvider>
-            <AuthBanner />
-            {children}
+            <SwrProvider>
+              <AuthBanner />
+              {children}
+            </SwrProvider>
           </AuthHealthProvider>
         </ModeProvider>
       </body>

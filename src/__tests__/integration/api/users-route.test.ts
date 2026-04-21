@@ -11,11 +11,14 @@ import { NextRequest } from "next/server";
 
 // vi.hoisted ensures these are initialized before vi.mock factories run,
 // since Vitest hoists vi.mock() calls to the top of the file.
-const { mockGetSession, mockSearchUsers, mockGetGoogleAccessToken } = vi.hoisted(() => ({
-  mockGetSession: vi.fn(),
-  mockSearchUsers: vi.fn(),
-  mockGetGoogleAccessToken: vi.fn(),
-}));
+const { mockGetSession, mockSearchUsers, mockGetGoogleAccessToken, mockGetEnv } = vi.hoisted(
+  () => ({
+    mockGetSession: vi.fn(),
+    mockSearchUsers: vi.fn(),
+    mockGetGoogleAccessToken: vi.fn(),
+    mockGetEnv: vi.fn(),
+  }),
+);
 
 vi.mock("@/lib/auth", () => ({
   getAuth: () => ({ api: { getSession: mockGetSession } }),
@@ -29,6 +32,10 @@ vi.mock("@/lib/access-token", () => ({
   getGoogleAccessToken: mockGetGoogleAccessToken,
 }));
 
+vi.mock("@/lib/env", () => ({
+  getEnv: mockGetEnv,
+}));
+
 vi.mock("@/lib/admin-sdk", async () => {
   const actual = await vi.importActual<typeof import("@/lib/admin-sdk")>("@/lib/admin-sdk");
   return { ...actual, searchUsers: mockSearchUsers };
@@ -36,11 +43,14 @@ vi.mock("@/lib/admin-sdk", async () => {
 
 import { GET } from "@/app/api/users/route";
 import { AuthError } from "@/lib/auth-errors";
+import { clearCache } from "@/lib/server-cache";
 
 describe("GET /api/users", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearCache();
     mockGetSession.mockResolvedValue({ user: { id: "u1" } });
+    mockGetEnv.mockReturnValue({ MCP_SERVER_URL: "http://localhost:4000/mcp" });
     mockGetGoogleAccessToken.mockResolvedValue(undefined);
   });
 
@@ -99,5 +109,44 @@ describe("GET /api/users", () => {
 
     const res = await GET(buildRequest(""));
     expect(res.status).toBe(401);
+  });
+
+  it("emits ETag and Cache-Control: private on 200", async () => {
+    mockSearchUsers.mockResolvedValue([{ email: "a@x.test", name: "Alice" }]);
+
+    const res = await GET(buildRequest(""));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("etag")).toMatch(/^"[a-f0-9]{40}"$/);
+    expect(res.headers.get("cache-control")).toContain("private");
+    expect(res.headers.get("cache-control")).toContain("max-age=30");
+  });
+
+  it("returns 304 when If-None-Match matches the payload ETag", async () => {
+    mockSearchUsers.mockResolvedValue([{ email: "a@x.test", name: "Alice" }]);
+
+    const first = await GET(buildRequest(""));
+    const etag = first.headers.get("etag");
+    expect(etag).toBeTruthy();
+
+    const url = "http://localhost/api/users";
+    const second = await GET(new NextRequest(url, { headers: { "if-none-match": etag! } }));
+    expect(second.status).toBe(304);
+    expect(await second.text()).toBe("");
+  });
+
+  it("never emits cache headers on 401", async () => {
+    mockSearchUsers.mockRejectedValue(
+      new AuthError({
+        code: "invalid_rapt",
+        source: "adc",
+        message: "x",
+        remedy: "y",
+      }),
+    );
+
+    const res = await GET(buildRequest(""));
+    expect(res.status).toBe(401);
+    expect(res.headers.get("etag")).toBeNull();
+    expect(res.headers.get("cache-control")).toBeNull();
   });
 });

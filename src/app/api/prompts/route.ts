@@ -9,7 +9,7 @@
  */
 
 import { NextResponse } from "next/server";
-import type { Prompt, PromptMessage } from "@modelcontextprotocol/sdk/types.js";
+import type { PromptMessage } from "@modelcontextprotocol/sdk/types.js";
 import { getGoogleAccessToken } from "@/lib/access-token";
 import { getEnv } from "@/lib/env";
 import { getMcpPrompt, listMcpPrompts } from "@/lib/mcp-client";
@@ -17,10 +17,9 @@ import { buildCallerCacheKey } from "@/lib/cache-key";
 import { requireSession } from "@/lib/session";
 import { LOG_TAGS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/errors";
+import { getOrFetch, CACHE_TAGS } from "@/lib/server-cache";
 
 const CATALOG_TTL_MS = 5 * 60 * 1000;
-
-const promptCatalogCache = new Map<string, { data: Prompt[]; expiresAt: number }>();
 
 export async function GET() {
   if (!(await requireSession())) {
@@ -29,26 +28,25 @@ export async function GET() {
 
   const config = getEnv();
   const accessToken = await getGoogleAccessToken();
-
-  const key = buildCallerCacheKey(config.MCP_SERVER_URL, accessToken);
-  const now = Date.now();
-  const cached = promptCatalogCache.get(key);
-  if (cached && cached.expiresAt > now) {
-    return NextResponse.json({ prompts: cached.data });
-  }
+  const callerKey = buildCallerCacheKey(config.MCP_SERVER_URL, accessToken);
 
   try {
-    const prompts = await listMcpPrompts(config.MCP_SERVER_URL, accessToken);
-    promptCatalogCache.set(key, { data: prompts, expiresAt: now + CATALOG_TTL_MS });
+    const prompts = await getOrFetch({
+      key: `prompts:${callerKey}`,
+      ttlMs: CATALOG_TTL_MS,
+      tags: [CACHE_TAGS.PROMPTS],
+      fetcher: () => listMcpPrompts(config.MCP_SERVER_URL, accessToken),
+    });
     return NextResponse.json({ prompts });
   } catch (error) {
     /**
-     * Don't cache empties. During `npm run dev:full` the Next.js app
-     * boots a beat before the MCP server, so the first call can
-     * ECONNREFUSED while the server is still starting. Returning 503
-     * (instead of a silent 200 with empty prompts) lets the client
-     * retry and get the real catalog once MCP is up. Auth errors still
-     * surface as part of the normal error message.
+     * Don't cache empties — `getOrFetch` already drops failed entries.
+     * During `npm run dev:full` the Next.js app boots a beat before the
+     * MCP server, so the first call can ECONNREFUSED while the server
+     * is still starting. Returning 503 (instead of a silent 200 with
+     * empty prompts) lets the client retry and get the real catalog
+     * once MCP is up. Auth errors still surface as part of the normal
+     * error message.
      */
     console.log(LOG_TAGS.MCP, "listMcpPrompts failed:", getErrorMessage(error));
     return NextResponse.json({ prompts: [], error: getErrorMessage(error) }, { status: 503 });

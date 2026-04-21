@@ -23,13 +23,6 @@ export const SA_EMAIL_DOMAIN = "service-account.local";
 export const USER_SEARCH_INPUT_ID = "user-search";
 
 /**
- * sessionStorage key for the cached activity map. The dashboard writes
- * here on first fetch and reads back on subsequent mounts so tab
- * navigation doesn't re-hit the Admin Reports API.
- */
-export const ACTIVITY_CACHE_KEY = "cep_activity_cache";
-
-/**
  * localStorage key for the sidebar's collapsed state. Persists across
  * reloads so the layout matches the user's last preference.
  */

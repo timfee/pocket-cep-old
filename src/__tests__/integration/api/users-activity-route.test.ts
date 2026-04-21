@@ -52,16 +52,29 @@ vi.mock("@/lib/adc", async () => {
 
 import { GET } from "@/app/api/users/activity/route";
 import { AuthError } from "@/lib/auth-errors";
+import { clearCache } from "@/lib/server-cache";
+import { NextRequest } from "next/server";
+
+/**
+ * Builds a NextRequest for the activity route. We need the real
+ * `NextRequest` (not a plain `Request`) because the route reads
+ * `request.nextUrl.searchParams.get("days")`.
+ */
+function makeRequest(headers: Record<string, string> = {}, days?: number): NextRequest {
+  const url = new URL("http://localhost/api/users/activity");
+  if (days !== undefined) url.searchParams.set("days", String(days));
+  return new NextRequest(url, { headers });
+}
 
 describe("GET /api/users/activity", () => {
   const originalFetch = global.fetch;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearCache();
     mockGetSession.mockResolvedValue({ user: { id: "u1" } });
     mockGetEnv.mockReturnValue({ MCP_SERVER_URL: "http://localhost:4000/mcp" });
     mockGetQuotaProject.mockResolvedValue(null);
-    // Unique per test to bypass the in-process cache.
     mockGetGoogleAccessToken.mockResolvedValue(`token-${Math.random()}`);
   });
 
@@ -77,7 +90,7 @@ describe("GET /api/users/activity", () => {
       }),
     } as Response);
 
-    const res = await GET();
+    const res = await GET(makeRequest());
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.activity["a@x.test"].eventCount).toBe(1);
@@ -96,7 +109,7 @@ describe("GET /api/users/activity", () => {
       }),
     );
 
-    const res = await GET();
+    const res = await GET(makeRequest());
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error.code).toBe("invalid_rapt");
@@ -113,7 +126,7 @@ describe("GET /api/users/activity", () => {
         }),
     } as Response);
 
-    const res = await GET();
+    const res = await GET(makeRequest());
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error.code).toBeDefined();
@@ -127,7 +140,7 @@ describe("GET /api/users/activity", () => {
       text: async () => "Service Unavailable",
     } as Response);
 
-    const res = await GET();
+    const res = await GET(makeRequest());
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.activity).toEqual({});
