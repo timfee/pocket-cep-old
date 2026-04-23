@@ -19,8 +19,6 @@
  * `src/lib/storage.ts` for details.
  */
 
-"use client";
-
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, KeyRound, Plus, Sparkles } from "lucide-react";
 import { cn } from "@/lib/cn";

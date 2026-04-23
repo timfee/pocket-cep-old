@@ -6,8 +6,6 @@
  * "Inspector" tab so we don't need a third top-level column.
  */
 
-"use client";
-
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { getToolName } from "ai";
@@ -26,7 +24,7 @@ type InspectorListProps = {
 export function InspectorList({ invocations }: InspectorListProps) {
   if (invocations.length === 0) {
     return (
-      <p className="text-on-surface-muted px-2 py-3 text-center text-[11px]">
+      <p className="text-on-surface-muted px-2 py-3 text-center text-[0.6875rem] text-pretty">
         Tool invocations will appear here as the agent calls MCP tools.
       </p>
     );
@@ -66,7 +64,7 @@ function InvocationCard({ invocation, index }: { invocation: InvocationPart; ind
         ) : (
           <ChevronRight className="text-on-surface-muted size-3" aria-hidden="true" />
         )}
-        <span className="text-on-surface flex-1 truncate font-mono text-[11px]">
+        <span className="text-on-surface flex-1 truncate font-mono text-[0.6875rem]">
           {getToolName(invocation)}
         </span>
         <span
@@ -84,7 +82,7 @@ function InvocationCard({ invocation, index }: { invocation: InvocationPart; ind
 
       {expanded && (
         <div className="border-on-surface/10 border-t p-2">
-          <pre className="bg-surface-container text-on-surface-variant overflow-x-auto rounded-[var(--radius-xs)] p-2 font-mono text-[10px] leading-4">
+          <pre className="bg-surface-container text-on-surface-variant overflow-x-auto rounded-[var(--radius-xs)] p-2 font-mono text-[0.625rem] leading-4">
             {JSON.stringify(
               {
                 toolCallId: invocation.toolCallId,

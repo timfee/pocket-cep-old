@@ -6,8 +6,6 @@
  * leave the viewport alone and show a "Jump to latest" pill.
  */
 
-"use client";
-
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isToolUIPart } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -47,21 +45,14 @@ function iconForPrompt(name: string): React.ComponentType<{ className?: string }
   return Terminal;
 }
 
-/**
- * Prettifies prompt names like `cep:health` to `Health`. Falls back to
- * the raw name when there's no prefix to strip. Prefer `title` if the
- * server supplies one.
- */
+// Prefer the server-supplied title; fall back to the bare name with
+// any `namespace:` prefix stripped.
 function titleForPrompt(p: Prompt): string {
   if (p.title) return p.title;
   const bare = p.name.includes(":") ? p.name.split(":").slice(1).join(":") : p.name;
   return bare.charAt(0).toUpperCase() + bare.slice(1);
 }
 
-/**
- * Small monospace chip that shows an MCP prompt name (e.g. `cep:health`).
- * Used in suggestion cards and compact user-message chips.
- */
 function PromptBadge({ name, prominent = false }: { name: string; prominent?: boolean }) {
   return (
     <span
@@ -141,7 +132,8 @@ export function ChatPanel({ selectedUser, onToolInvocation, onClearSelectedUser 
     if (!el) return;
     const handler = () => {
       const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-      setIsPinnedToBottom(distanceFromBottom < 120);
+      const nextPinned = distanceFromBottom < 120;
+      setIsPinnedToBottom((prev) => (prev === nextPinned ? prev : nextPinned));
     };
     el.addEventListener("scroll", handler, { passive: true });
     return () => el.removeEventListener("scroll", handler);
@@ -179,8 +171,7 @@ export function ChatPanel({ selectedUser, onToolInvocation, onClearSelectedUser 
     [sendMessage],
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = () => {
     handleSend(input);
   };
 
@@ -312,7 +303,7 @@ function EmptyState({
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-8 pt-6">
       <div className="fade-in flex flex-col gap-1.5">
-        <h2 className="text-on-surface text-2xl leading-8 font-medium tracking-tight">
+        <h2 className="text-on-surface text-2xl font-medium tracking-tight text-balance">
           {selectedUser ? (
             <>
               Investigate{" "}
@@ -322,7 +313,7 @@ function EmptyState({
             "What would you like to check?"
           )}
         </h2>
-        <p className="text-on-surface-variant text-sm leading-5">
+        <p className="text-on-surface-variant text-sm text-pretty">
           {selectedUser
             ? "Ask anything — the agent can pull audit events, license state, DLP policy, and diagnostics for this user."
             : "Ask anything about your Chrome Enterprise Premium environment. Pick a user from the left to scope questions to them."}
@@ -332,7 +323,7 @@ function EmptyState({
       {prompts.length > 0 && (
         <div className="flex flex-col gap-2.5">
           <div className="flex items-baseline justify-between">
-            <h3 className="text-on-surface-variant text-xs font-medium">Server prompts</h3>
+            <h3 className="section-label">Server prompts</h3>
             <span className="text-on-surface-muted font-mono text-[0.6875rem]">
               from MCP · prompts/list
             </span>

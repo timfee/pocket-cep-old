@@ -37,7 +37,7 @@ export default function LandingPage() {
 
         <SignInButton />
 
-        <p className="text-on-surface-muted text-center text-xs/4 text-pretty">
+        <p className="text-on-surface-muted text-center text-sm text-pretty">
           Sign in with your Google Workspace account. Your credentials authenticate with the MCP
           server.
         </p>
@@ -45,7 +45,7 @@ export default function LandingPage() {
 
       {/** Subtle footer anchors the page and communicates the underlying technology. */}
       <footer className="absolute bottom-4">
-        <p className="text-on-surface-muted text-[11px]">Powered by Model Context Protocol</p>
+        <p className="text-on-surface-muted text-[0.6875rem]">Powered by Model Context Protocol</p>
       </footer>
     </div>
   );

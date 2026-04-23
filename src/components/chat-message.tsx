@@ -2,8 +2,6 @@
  * @file Chat message bubble rendering AI SDK v6 UIMessage parts.
  */
 
-"use client";
-
 import { useEffect, useState } from "react";
 import { Bot, ChevronDown, ChevronRight, Copy, Check, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -308,7 +306,7 @@ function tryParseJsonFence(text: string): { matched: true; value: unknown } | { 
 
 function ToolJson({ value }: { value: unknown }) {
   return (
-    <pre className="bg-surface-container text-on-surface-variant overflow-x-auto rounded-[var(--radius-xs)] p-2 font-mono text-[10px] leading-4">
+    <pre className="bg-surface-container text-on-surface-variant overflow-x-auto rounded-[var(--radius-xs)] p-2 font-mono text-[0.625rem] leading-4">
       {JSON.stringify(value, null, 2)}
     </pre>
   );
@@ -350,11 +348,11 @@ function AuthToolCard({ payload }: { payload: AuthErrorPayload }) {
   }, [payload]);
 
   return (
-    <div className="bg-warning-light text-warning ring-warning/30 my-1.5 rounded-[var(--radius-sm)] px-3 py-2 text-xs ring-1">
+    <div className="bg-warning-light text-warning ring-warning/30 my-1.5 rounded-[var(--radius-sm)] px-3 py-2 text-sm ring-1">
       <p className="font-semibold">Authentication required</p>
-      <p className="text-warning/80 mt-0.5 leading-4">{payload.remedy}</p>
+      <p className="text-warning/80 mt-0.5 text-pretty">{payload.remedy}</p>
       {payload.command && (
-        <code className="bg-surface-container text-on-surface-variant mt-1.5 inline-block rounded-[var(--radius-xs)] px-1.5 py-0.5 font-mono text-[11px]">
+        <code className="bg-surface-container text-on-surface-variant mt-1.5 inline-block rounded-[var(--radius-xs)] px-1.5 py-0.5 font-mono text-[0.6875rem]">
           {payload.command}
         </code>
       )}
@@ -363,7 +361,7 @@ function AuthToolCard({ payload }: { payload: AuthErrorPayload }) {
           href={payload.docsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-primary ml-2 text-[11px] underline"
+          className="text-primary ml-2 text-[0.6875rem] underline"
         >
           Details
         </a>

@@ -162,3 +162,29 @@ All Google API failures (ADC, Admin SDK, MCP tool errors) flow through `src/lib/
 4. For new error shapes Google throws, extend `toAuthError()` rather than adding ad-hoc substring checks at call sites.
 
 Never add a `try/catch` that returns empty data on credential failure — that silently breaks the banner + doctor + chat card contract.
+
+## Design System
+
+The UI is deliberately Material Design 3 (MD3) in feel — a Google Workspace admin console, not a generic SaaS dashboard. Keep this coherent.
+
+### Typography
+
+- **Sans:** Roboto (`next/font/google`, weights 400/500/700). **Mono:** Roboto Mono. Do not swap to Inter or any other sans, even when a general UI guideline recommends it — Roboto is the deliberate stand-in for Google Sans Text that Workspace consoles ship with. The `@utility font-display` in `globals.css` carries the display tracking.
+- Roboto has no 600 weight; `font-semibold` falls back to 700. That's intended — don't load a 600 subset.
+- Never use `text-xs` for body paragraphs. Smallest body size is `text-sm`; use `text-xs` and `text-[0.6875rem]`/`text-[0.625rem]` only for secondary labels, eyebrows, keyboard hints, badges, and dense inspector data.
+- Arbitrary font sizes must be in `rem`, not `px` — `text-[0.6875rem]` not `text-[11px]`.
+- Never override heading line-heights (`leading-*` on `h1`–`h6`) — the default is tuned to work with the global tracking.
+
+### Tokens and Tailwind
+
+- Tailwind v4, CSS-first. All tokens live in `src/app/globals.css` under `@theme inline`. **There is no `tailwind.config.ts`** — do not add one.
+- Colors are semantic MD3 tokens: `--color-primary`, `--color-surface*`, `--color-on-surface*`, `--color-error/warning/success*`, `--color-outline*`. Reference them via Tailwind class shorthands (`bg-primary`, `text-on-surface-variant`, `border-on-surface/10`). No raw hex in components.
+- Radii come from the `--radius-xs`..`--radius-xl` scale, referenced as `rounded-[var(--radius-xs)]`. Don't hand-roll `rounded-[6px]` etc.
+- Dividers and borders must use opacity-based colors (`border-on-surface/10`, `divide-on-surface/5`), never solid palette shades.
+- Custom utilities are defined in `globals.css` (`@utility state-layer`, `surface-raised`, `section-label`, `panel-grid-bg`, `prose-chat`, animations). Extend by adding a new `@utility` block; do not copy the pattern inline.
+
+### Component Library
+
+- shadcn footprint is intentionally tiny: only `Badge` and `Skeleton` under `src/components/ui/`. Do not import more shadcn primitives — hand-rolled components (combobox in `user-selector.tsx`, model picker in `model-selector.tsx`, inspector, chat panel) carry domain-specific concerns that a generic primitive would strip out.
+- Icons are `lucide-react` only. No custom SVG, no alternative icon sets.
+- Use `size-{n}` when width and height are equal. Use `gap-*` on flex/grid parents instead of margin utilities between siblings.

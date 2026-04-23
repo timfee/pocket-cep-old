@@ -13,8 +13,6 @@
  * keystroke.
  */
 
-"use client";
-
 import { useState, useEffect, useRef } from "react";
 import useSWR from "swr";
 import { Search, Loader2, UserX, Check, Activity } from "lucide-react";
@@ -196,14 +194,14 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
 
             {showError && (
               <div className="px-3 py-3">
-                <p className="text-error text-xs font-medium">
+                <p className="text-error text-sm font-medium">
                   {isCredentialError ? "Credential Error" : "Search Failed"}
                 </p>
-                <p className="text-error/80 mt-1 text-[11px] leading-4">
+                <p className="text-error/80 mt-1 text-sm text-pretty">
                   {authPayload?.remedy ?? error?.message}
                 </p>
                 {authPayload?.command && (
-                  <code className="bg-surface-container text-on-surface-variant mt-1.5 block rounded-[var(--radius-xs)] px-2 py-1 font-mono text-[11px]">
+                  <code className="bg-surface-container text-on-surface-variant mt-1.5 block rounded-[var(--radius-xs)] px-2 py-1 font-mono text-[0.6875rem]">
                     {authPayload.command}
                   </code>
                 )}
@@ -220,7 +218,7 @@ export function UserSelector({ selectedUser, onUserChange, activity }: UserSelec
             {isEmptyResults && (
               <div className="flex flex-col items-center gap-1.5 px-3 py-4 text-center">
                 <UserX className="text-on-surface-muted size-5" aria-hidden="true" />
-                <p className="text-on-surface-muted text-xs">
+                <p className="text-on-surface-muted text-sm text-pretty">
                   {query ? `No users matching "${query}"` : "No users found in this org"}
                 </p>
               </div>

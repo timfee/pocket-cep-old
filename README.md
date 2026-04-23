@@ -442,6 +442,12 @@ MCP servers expose **prompts** in addition to tools — structured conversation 
 
 Pocket CEP uses the official `@modelcontextprotocol/sdk` over HTTP. `StreamableHTTPClientTransport` sends JSON-RPC 2.0 to `POST /mcp`. Each call opens a fresh connection (the upstream server is stateless). In `user_oauth` mode, the signed-in user's Google access token is injected as a `Bearer` header.
 
+## Design System
+
+The UI is Material Design 3 in feel — a Google Workspace admin console, not a generic SaaS dashboard. Tokens (colors, radii, shadows, typography) live entirely in `src/app/globals.css` via Tailwind v4's `@theme inline`; there is no `tailwind.config.ts`. The shadcn footprint is deliberately small (only `Badge` and `Skeleton`); most components are hand-rolled to keep domain specifics (combobox suppression attributes, the MCP inspector, the BYOK model picker).
+
+See [`AGENTS.md` → Design System](./AGENTS.md#design-system) for the canonical rules: typography scale, token taxonomy, utility inventory, and the Roboto-not-Inter decision.
+
 ## License
 
 This project is an educational companion and is not an officially supported Google product.

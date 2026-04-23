@@ -66,8 +66,8 @@ export function AuthBanner() {
     >
       <ShieldAlert className="size-4 shrink-0" aria-hidden="true" />
       <div className="flex-1">
-        <p className="font-medium">{error.remedy}</p>
-        <p className="text-xs opacity-80">{error.message}</p>
+        <p className="font-medium text-pretty">{error.remedy}</p>
+        <p className="text-on-surface-variant text-pretty">{error.message}</p>
       </div>
 
       {error.command && (

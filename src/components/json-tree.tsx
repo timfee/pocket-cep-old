@@ -15,8 +15,6 @@
  * want the educational POC to own its rendering.
  */
 
-"use client";
-
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -34,7 +32,7 @@ type JsonTreeProps = {
  */
 export function JsonTree({ value, defaultOpen = true }: JsonTreeProps) {
   return (
-    <div className="font-mono text-[11px] leading-5">
+    <div className="font-mono text-[0.6875rem] leading-5">
       <Node value={value} depth={0} defaultOpen={defaultOpen} />
     </div>
   );

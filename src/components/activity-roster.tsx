@@ -14,8 +14,6 @@
  * count means (Chrome audit-log events in the last 7 days).
  */
 
-"use client";
-
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -62,7 +60,7 @@ export function ActivityRoster({ activity, selectedUser, isLoading, onPick }: Ac
 
   if (ranked.length === 0) {
     return (
-      <p className="text-on-surface-muted text-xs">
+      <p className="text-on-surface-muted text-sm text-pretty">
         No Chrome audit events recorded in the last 7 days.
       </p>
     );

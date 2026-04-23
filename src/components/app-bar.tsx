@@ -8,8 +8,6 @@
  * sidebar's own search input.
  */
 
-"use client";
-
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 import { SA_EMAIL_DOMAIN } from "@/lib/constants";

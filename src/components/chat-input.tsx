@@ -9,15 +9,13 @@
  * the next message will be sent from.
  */
 
-"use client";
-
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { ArrowUp, AtSign, CornerDownLeft, Square, X } from "lucide-react";
 
 type ChatInputProps = {
   value: string;
   onChange: (value: string) => void;
-  onSubmit: (e: React.FormEvent) => void;
+  onSubmit: () => void;
   isStreaming: boolean;
   onStop: () => void;
   selectedUser: string;
@@ -53,7 +51,7 @@ export function ChatInput({
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (!isStreaming && value.trim()) {
-        onSubmit(e);
+        onSubmit();
       }
     }
   };
@@ -65,7 +63,10 @@ export function ChatInput({
   return (
     <div className="bg-surface-dim border-on-surface/10 shrink-0 border-t px-4 pt-3 pb-4">
       <form
-        onSubmit={onSubmit}
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSubmit();
+        }}
         className="surface-raised relative mx-auto flex max-w-3xl flex-col rounded-[var(--radius-md)] focus-within:border-[var(--color-primary)] focus-within:shadow-[0_0_0_3px_rgb(26_115_232_/_0.15),var(--shadow-elevation-1)]"
       >
         {selectedUser && (

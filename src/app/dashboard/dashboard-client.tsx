@@ -137,7 +137,7 @@ function DashboardShell() {
           id="dashboard-sidebar"
           aria-label="Investigation rail"
           hidden={isSidebarCollapsed}
-          className="bg-surface border-on-surface/10 flex min-h-0 w-72 shrink-0 flex-col border-r max-md:hidden lg:w-80"
+          className="bg-surface border-on-surface/10 @container flex min-h-0 w-72 shrink-0 flex-col border-r max-md:hidden lg:w-80"
         >
           <section
             aria-label="User search"
@@ -193,7 +193,7 @@ function DashboardShell() {
                     last 7 days
                   </span>
                 </header>
-                <p className="text-on-surface-muted text-[0.6875rem] leading-4">
+                <p className="text-on-surface-muted text-[0.6875rem] leading-4 text-pretty">
                   Top users by audit-log activity. Click a row to scope the chat to that user.
                 </p>
                 <ActivityRoster

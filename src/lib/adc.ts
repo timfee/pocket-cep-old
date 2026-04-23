@@ -80,10 +80,20 @@ export async function buildGoogleApiHeaders(
  * Reads the quota_project_id from the ADC credentials file. Falls back
  * to GOOGLE_CLOUD_QUOTA_PROJECT. Returns null if neither is set — that
  * is a soft failure, not an auth failure.
+ *
+ * The ADC file is cached after the first read. Its path is fixed and
+ * the content is only rewritten by `gcloud auth application-default
+ * login`; if that happens the dev restarts the server anyway, so we
+ * don't bother invalidating.
  */
+let cachedQuotaProject: string | null | undefined;
+
 export async function getQuotaProject(): Promise<string | null> {
   if (process.env.GOOGLE_CLOUD_QUOTA_PROJECT) {
     return process.env.GOOGLE_CLOUD_QUOTA_PROJECT;
+  }
+  if (cachedQuotaProject !== undefined) {
+    return cachedQuotaProject;
   }
 
   try {
@@ -94,10 +104,13 @@ export async function getQuotaProject(): Promise<string | null> {
     const raw: unknown = JSON.parse(readFileSync(credPath, "utf-8"));
     if (raw && typeof raw === "object" && "quota_project_id" in raw) {
       const value = (raw as { quota_project_id?: unknown }).quota_project_id;
-      return typeof value === "string" ? value : null;
+      cachedQuotaProject = typeof value === "string" ? value : null;
+      return cachedQuotaProject;
     }
+    cachedQuotaProject = null;
     return null;
   } catch {
+    cachedQuotaProject = null;
     return null;
   }
 }

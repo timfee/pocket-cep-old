@@ -9,8 +9,6 @@
  * then the model picker as the clear primary control on the right.
  */
 
-"use client";
-
 import { useState } from "react";
 import { useMode, type ModeInfo } from "./mode-provider";
 import { ModelSelector } from "./model-selector";
