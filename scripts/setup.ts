@@ -479,36 +479,59 @@ async function walkAdcSetup() {
 const DEFAULT_MCP_URL = "http://localhost:4000/mcp";
 
 /**
- * Step 6: MCP server URL. Offers the recommended local path (Pocket
- * CEP starts the official `@google/chrome-enterprise-premium-mcp`
- * npx package via `npm run dev:full`) and a custom-URL escape hatch
- * for users who run their own MCP deployment.
+ * Step 6: MCP server URL. The localhost default is opaque without
+ * context — this step explains that the MCP server is a separate
+ * process (the published `@google/chrome-enterprise-premium-mcp`
+ * package, or a local clone if you're hacking on it) before asking
+ * the URL question. A custom-URL escape hatch covers remote
+ * deployments.
  */
 async function chooseMcpUrl(current: string | undefined): Promise<string> {
-  banner("Step 6 · MCP server", "Where is the Chrome Enterprise Premium MCP server running?");
+  banner(
+    "Step 6 · MCP server",
+    "The CEP admin tools live in a separate process. Pocket CEP talks to it over HTTP.",
+  );
+
+  console.log(
+    `${DIM}Most contributors use the official npm package. \`npm run dev:full\`${RESET}`,
+  );
+  console.log(
+    `${DIM}launches it alongside Next on port 4000:${RESET}\n`,
+  );
+  console.log(`  ${CYAN}npx @google/chrome-enterprise-premium-mcp@latest${RESET}\n`);
+  console.log(
+    `${DIM}If you've cloned the MCP source locally and want to run that${RESET}`,
+  );
+  console.log(
+    `${DIM}instead, override the command when starting dev:${RESET}\n`,
+  );
+  console.log(`  ${CYAN}MCP_SERVER_CMD="node /path/to/cmcp/mcp-server.js" npm run dev:full${RESET}\n`);
+  console.log(
+    `${DIM}Either way, Pocket CEP still dials ${DEFAULT_MCP_URL} — the URL doesn't${RESET}`,
+  );
+  console.log(`${DIM}change; only what's on the other end does.${RESET}\n`);
 
   const isCustom = current !== undefined && current !== "" && current !== DEFAULT_MCP_URL;
 
   const choice = await select<"local" | "custom">({
-    message: "How should the MCP server run?",
+    message: "Which URL should Pocket CEP dial?",
     default: isCustom ? "custom" : "local",
     choices: [
       {
-        name: "Let Pocket CEP launch it for you (recommended)",
+        name: `${DEFAULT_MCP_URL} — local, started by \`npm run dev:full\``,
         value: "local",
-        description:
-          "`npm run dev:full` starts `npx @google/chrome-enterprise-premium-mcp` on :4000.",
+        description: "Covers both the npm package and a local source clone (via MCP_SERVER_CMD).",
       },
       {
-        name: "Point at an already-running MCP server",
+        name: "Somewhere else — I have an MCP server running remotely",
         value: "custom",
-        description: "I run the MCP server myself — ask me for the URL.",
+        description: "Enter a URL (staging deployment, Cloud Run, shared demo, etc.).",
       },
     ],
   });
 
   if (choice === "local") {
-    note(`Using ${DEFAULT_MCP_URL}. Start it later with \`npm run dev:full\`.`);
+    note(`Set to ${DEFAULT_MCP_URL}. Start the server with \`npm run dev:full\` when ready.`);
     return DEFAULT_MCP_URL;
   }
 
