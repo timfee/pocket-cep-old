@@ -29,25 +29,25 @@ The app is deliberately educational. An **MCP Inspector** panel shows every JSON
 ## Quick Start
 
 ```bash
-# 1. Install dependencies
+# 1. Install dependencies (postinstall prints a setup hint if needed)
 npm install
 
-# 2. Create your secrets file
-cp .env.local.example .env.local
-# Edit .env.local and fill in your credentials (see Configuration below)
+# 2. Configure interactively — walks through auth mode, API keys,
+#    gcloud ADC, and the MCP URL with live validation at each step
+npm run setup
 
-# 3. Set up ADC for service_account mode (sign in as a Workspace admin)
-gcloud auth application-default login \
-  --scopes="https://www.googleapis.com/auth/chrome.management.policy,https://www.googleapis.com/auth/chrome.management.reports.readonly,https://www.googleapis.com/auth/chrome.management.profiles.readonly,https://www.googleapis.com/auth/admin.reports.audit.readonly,https://www.googleapis.com/auth/admin.directory.orgunit.readonly,https://www.googleapis.com/auth/admin.directory.customer.readonly,https://www.googleapis.com/auth/cloud-identity.policies,https://www.googleapis.com/auth/apps.licensing,https://www.googleapis.com/auth/cloud-platform"
-
-gcloud auth application-default set-quota-project YOUR_PROJECT_ID
-
-# 4. Check your environment
-npm run doctor
-
-# 5. Start Pocket CEP + the MCP server together (two named log streams)
+# 3. Start Pocket CEP + the MCP server together (two named log streams)
 npm run dev:full
 ```
+
+Prefer to configure by hand? Copy `.env.local.example` to `.env.local`
+and fill in the blanks, then run `npm run doctor` to verify. Service-account
+mode also needs ADC: `gcloud auth application-default login` with the
+scopes shown in `.env.local.example`, followed by
+`gcloud auth application-default set-quota-project YOUR_PROJECT_ID`.
+
+If the dev server starts but env vars are missing, the landing page shows
+a setup-required screen pointing back at `npm run setup`.
 
 Open http://localhost:3000 and sign in with Google.
 

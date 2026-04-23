@@ -27,19 +27,36 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
-import { getEnv } from "@/lib/env";
+import { getEnv, isEnvValidationError } from "@/lib/env";
+import { renderEnvErrorHtml } from "@/lib/env-error-page";
 
 /**
  * Route-protection proxy. Redirects users based on auth mode and
  * session state. Returns NextResponse.next() to allow the request
  * through when no redirect is needed.
+ *
+ * When env validation fails we serve a styled HTML page pointing the
+ * reader at `npm run setup` instead of letting the raw error surface
+ * in Next.js's dev overlay — first-run UX matters for a teaching app.
  */
 export async function proxy(request: NextRequest) {
-  const { AUTH_MODE } = getEnv();
+  let authMode: string;
+  try {
+    authMode = getEnv().AUTH_MODE;
+  } catch (error) {
+    if (isEnvValidationError(error)) {
+      return new NextResponse(renderEnvErrorHtml(error.issues), {
+        status: 500,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }
+    throw error;
+  }
+
   const sessionCookie = getSessionCookie(request);
   const { pathname } = request.nextUrl;
 
-  if (AUTH_MODE === "service_account") {
+  if (authMode === "service_account") {
     if (!sessionCookie) {
       return NextResponse.redirect(new URL("/api/auth/auto-session", request.url));
     }

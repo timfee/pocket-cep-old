@@ -336,11 +336,58 @@ async function promptGoogleOAuth(current: EnvMap) {
 }
 
 /**
- * Step 6: in service_account mode we need Google ADC. Probe it; if
- * missing, walk the user through the two gcloud commands that fix it.
+ * Returns true if the `gcloud` CLI is on PATH. ADC depends on it, so we
+ * preflight before the ADC probe to give a clearer error when it's
+ * missing entirely (the probe's "no credentials" message is confusing
+ * if the real cause is "gcloud isn't installed yet").
+ */
+function isGcloudInstalled(): boolean {
+  return spawnSync("gcloud", ["--version"], { stdio: "ignore" }).status === 0;
+}
+
+/**
+ * Prints the right install hint for the host OS and returns whether
+ * the user wants to continue after installing it themselves.
+ */
+async function promptGcloudInstall(): Promise<boolean> {
+  failClear("`gcloud` is not installed");
+  console.log(`${DIM}The Google Cloud CLI is required for service-account mode —${RESET}`);
+  console.log(`${DIM}Pocket CEP uses your Application Default Credentials.${RESET}\n`);
+
+  if (process.platform === "darwin") {
+    console.log(`  ${CYAN}brew install --cask google-cloud-sdk${RESET}`);
+  } else if (process.platform === "linux") {
+    console.log(`  ${CYAN}See https://cloud.google.com/sdk/docs/install#linux${RESET}`);
+  } else if (process.platform === "win32") {
+    console.log(`  ${CYAN}See https://cloud.google.com/sdk/docs/install#windows${RESET}`);
+  } else {
+    console.log(`  ${CYAN}See https://cloud.google.com/sdk/docs/install${RESET}`);
+  }
+  console.log();
+
+  return confirm({
+    message: "Re-check for `gcloud` now?",
+    default: true,
+  });
+}
+
+/**
+ * Step 6: in service_account mode we need Google ADC. Preflight for
+ * gcloud, then probe ADC; if missing, walk the user through the two
+ * gcloud commands that fix it.
  */
 async function walkAdcSetup() {
   banner("Step 5 · Google ADC", "Service account mode uses your gcloud ADC credentials.");
+
+  checking("Checking for `gcloud`");
+  if (!isGcloudInstalled()) {
+    const retry = await promptGcloudInstall();
+    if (!retry || !isGcloudInstalled()) {
+      note("Skipping ADC check. Re-run `npm run setup` after installing gcloud.");
+      return;
+    }
+  }
+  okClear("`gcloud` is installed");
 
   checking("Checking Google ADC");
   const result = await probeAdcToken();

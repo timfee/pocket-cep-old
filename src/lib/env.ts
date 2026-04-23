@@ -119,14 +119,52 @@ export const serverSchema = z.preprocess((raw) => {
 
 export type ServerEnv = z.infer<typeof serverSchema>;
 
+/**
+ * Structured issue surfaced by {@link EnvValidationError}. `path` is the
+ * env var name (e.g. `"ANTHROPIC_API_KEY"`); `message` is the reason.
+ */
+export type EnvValidationIssue = {
+  path: string;
+  message: string;
+};
+
+/**
+ * Thrown by {@link getEnv} when env validation fails. Carries the
+ * structured list of issues so callers (the middleware, tests) can
+ * render them however they want. Extends `Error` so existing
+ * `instanceof Error` checks still work; the formatted multi-line
+ * message is preserved for anyone logging `.message`.
+ */
+export class EnvValidationError extends Error {
+  readonly issues: ReadonlyArray<EnvValidationIssue>;
+
+  constructor(issues: ReadonlyArray<EnvValidationIssue>) {
+    const formatted = issues.map((i) => `  - ${i.path}: ${i.message}`).join("\n");
+    super(
+      `\n\n[env] Environment validation failed:\n${formatted}\n\n` +
+        "Run `npm run setup` to configure interactively, or see .env.local.example.\n",
+    );
+    this.name = "EnvValidationError";
+    this.issues = issues;
+  }
+}
+
+/**
+ * Narrow type guard so `catch` blocks can branch without relying on
+ * `instanceof` (which is lossy across module boundaries in some
+ * bundlers).
+ */
+export function isEnvValidationError(err: unknown): err is EnvValidationError {
+  return err instanceof Error && err.name === "EnvValidationError";
+}
+
 /** Module-level cache — env is validated once per process, not per request. */
 let _env: ServerEnv | null = null;
 
 /**
  * Returns the validated server environment, parsing on first call.
- * Throws a developer-friendly error listing every invalid field at once
- * (rather than failing on the first one), so you can fix all issues in
- * a single pass.
+ * Throws {@link EnvValidationError} listing every invalid field at
+ * once so you can fix all issues in a single pass.
  */
 export function getEnv(): ServerEnv {
   if (_env) return _env;
@@ -134,14 +172,11 @@ export function getEnv(): ServerEnv {
   const result = serverSchema.safeParse(process.env);
 
   if (!result.success) {
-    const formatted = result.error.issues
-      .map((issue) => `  - ${issue.path.join(".")}: ${issue.message}`)
-      .join("\n");
-
-    throw new Error(
-      `\n\n[env] Environment validation failed:\n${formatted}\n\n` +
-        "Check your .env and .env.local files. See .env.local.example for setup instructions.\n",
-    );
+    const issues: EnvValidationIssue[] = result.error.issues.map((issue) => ({
+      path: issue.path.join(".") || "(root)",
+      message: issue.message,
+    }));
+    throw new EnvValidationError(issues);
   }
 
   _env = result.data;

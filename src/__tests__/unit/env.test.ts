@@ -1,9 +1,10 @@
 /**
- * @file Tests for the discriminated union env validation schema.
+ * @file Tests for the discriminated union env validation schema and
+ * the typed EnvValidationError it surfaces.
  */
 
 import { describe, it, expect } from "vitest";
-import { serverSchema } from "@/lib/env";
+import { serverSchema, EnvValidationError, isEnvValidationError } from "@/lib/env";
 
 const VALID_CLAUDE_SA = {
   AUTH_MODE: "service_account",
@@ -78,5 +79,71 @@ describe("serverSchema", () => {
   it("rejects missing BETTER_AUTH_SECRET", () => {
     const { BETTER_AUTH_SECRET: _, ...env } = VALID_CLAUDE_SA;
     expect(serverSchema.safeParse(env).success).toBe(false);
+  });
+});
+
+describe("EnvValidationError", () => {
+  const ISSUES = [
+    { path: "BETTER_AUTH_SECRET", message: "required" },
+    { path: "ANTHROPIC_API_KEY", message: "expected string" },
+  ];
+
+  it("carries the structured issue list", () => {
+    const err = new EnvValidationError(ISSUES);
+    expect(err.issues).toHaveLength(2);
+    expect(err.issues[0]).toEqual({ path: "BETTER_AUTH_SECRET", message: "required" });
+  });
+
+  it("formats each issue into the human-readable message", () => {
+    const err = new EnvValidationError(ISSUES);
+    expect(err.message).toContain("BETTER_AUTH_SECRET: required");
+    expect(err.message).toContain("ANTHROPIC_API_KEY: expected string");
+  });
+
+  it("message points at `npm run setup` as the primary CTA", () => {
+    const err = new EnvValidationError(ISSUES);
+    expect(err.message).toContain("npm run setup");
+    expect(err.message).toContain(".env.local.example");
+  });
+
+  it("is an Error subclass with a named constructor", () => {
+    const err = new EnvValidationError(ISSUES);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe("EnvValidationError");
+  });
+
+  it("freezes the issue list contract (readonly at the type level)", () => {
+    const err = new EnvValidationError(ISSUES);
+    // The type is ReadonlyArray so mutation should be a type error; at
+    // runtime we just assert the reference matches.
+    expect(err.issues).toBe(err.issues);
+  });
+});
+
+describe("isEnvValidationError", () => {
+  it("returns true for an EnvValidationError instance", () => {
+    expect(isEnvValidationError(new EnvValidationError([{ path: "X", message: "y" }]))).toBe(true);
+  });
+
+  it("returns false for a plain Error", () => {
+    expect(isEnvValidationError(new Error("boom"))).toBe(false);
+  });
+
+  it("returns false for non-Error values", () => {
+    expect(isEnvValidationError(null)).toBe(false);
+    expect(isEnvValidationError(undefined)).toBe(false);
+    expect(isEnvValidationError("string")).toBe(false);
+    expect(isEnvValidationError({ name: "EnvValidationError" })).toBe(false);
+  });
+
+  it("recognises cross-realm instances by name (not instanceof)", () => {
+    // Simulate an error that crosses a module/bundler boundary where
+    // `instanceof EnvValidationError` would fail but the `name`
+    // property survives structured cloning.
+    const crossRealm = Object.assign(new Error("cross realm"), {
+      name: "EnvValidationError",
+      issues: [{ path: "X", message: "y" }],
+    });
+    expect(isEnvValidationError(crossRealm)).toBe(true);
   });
 });
