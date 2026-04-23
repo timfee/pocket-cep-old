@@ -346,92 +346,175 @@ function isGcloudInstalled(): boolean {
 }
 
 /**
- * Prints the right install hint for the host OS and returns whether
- * the user wants to continue after installing it themselves.
+ * Prints platform-appropriate gcloud install hints. Extracted so both
+ * the "not installed" branch and the "still not installed after
+ * re-check" branch render the same guidance.
  */
-async function promptGcloudInstall(): Promise<boolean> {
-  failClear("`gcloud` is not installed");
+function printGcloudInstallHints(): void {
   console.log(`${DIM}The Google Cloud CLI is required for service-account mode —${RESET}`);
-  console.log(`${DIM}Pocket CEP uses your Application Default Credentials.${RESET}\n`);
+  console.log(`${DIM}Pocket CEP uses your Application Default Credentials.${RESET}`);
+  console.log(`${DIM}Install it in another terminal, then come back:${RESET}\n`);
 
   if (process.platform === "darwin") {
     console.log(`  ${CYAN}brew install --cask google-cloud-sdk${RESET}`);
+    console.log(`  ${DIM}or see https://cloud.google.com/sdk/docs/install-sdk${RESET}`);
   } else if (process.platform === "linux") {
-    console.log(`  ${CYAN}See https://cloud.google.com/sdk/docs/install#linux${RESET}`);
+    console.log(`  ${CYAN}https://cloud.google.com/sdk/docs/install-sdk#linux${RESET}`);
   } else if (process.platform === "win32") {
-    console.log(`  ${CYAN}See https://cloud.google.com/sdk/docs/install#windows${RESET}`);
+    console.log(`  ${CYAN}https://cloud.google.com/sdk/docs/install-sdk#windows${RESET}`);
   } else {
-    console.log(`  ${CYAN}See https://cloud.google.com/sdk/docs/install${RESET}`);
+    console.log(`  ${CYAN}https://cloud.google.com/sdk/docs/install-sdk${RESET}`);
   }
   console.log();
-
-  return confirm({
-    message: "Re-check for `gcloud` now?",
-    default: true,
-  });
+  console.log(`${DIM}Tip: open a new shell after installing so PATH updates take effect.${RESET}\n`);
 }
 
 /**
- * Step 6: in service_account mode we need Google ADC. Preflight for
- * gcloud, then probe ADC; if missing, walk the user through the two
- * gcloud commands that fix it.
+ * Loops on "re-check or skip" until gcloud is installed or the user
+ * chooses to defer. Returns true when gcloud is ready, false when the
+ * user opted to skip ADC entirely.
  */
-async function walkAdcSetup() {
-  banner("Step 5 · Google ADC", "Service account mode uses your gcloud ADC credentials.");
-
+async function ensureGcloudInstalled(): Promise<boolean> {
   checking("Checking for `gcloud`");
-  if (!isGcloudInstalled()) {
-    const retry = await promptGcloudInstall();
-    if (!retry || !isGcloudInstalled()) {
-      note("Skipping ADC check. Re-run `npm run setup` after installing gcloud.");
+  if (isGcloudInstalled()) {
+    okClear("`gcloud` is installed");
+    return true;
+  }
+  failClear("`gcloud` is not installed");
+
+  for (;;) {
+    printGcloudInstallHints();
+    const next = await select<"recheck" | "skip">({
+      message: "When you're ready:",
+      default: "recheck",
+      choices: [
+        {
+          name: "I've installed gcloud — re-check now",
+          value: "recheck",
+          description: "Verifies `gcloud --version` succeeds, then continues with ADC.",
+        },
+        {
+          name: "Skip ADC for now",
+          value: "skip",
+          description: "Finish writing .env.local; run `npm run doctor` to verify later.",
+        },
+      ],
+    });
+
+    if (next === "skip") {
+      note("Skipping ADC. After installing gcloud, run:");
+      console.log(`  ${CYAN}gcloud auth application-default login${RESET}`);
+      console.log(`  ${CYAN}npm run doctor${RESET}\n`);
+      return false;
+    }
+
+    if (isGcloudInstalled()) {
+      console.log(`  ${GREEN}✓${RESET} \`gcloud\` is installed\n`);
+      return true;
+    }
+    console.log(`  \x1b[31m✗${RESET} Still not found. Open a new shell to refresh PATH.\n`);
+  }
+}
+
+/**
+ * Loops on "re-check or skip" until the ADC token exchange succeeds
+ * or the user opts out. Assumes gcloud is already installed.
+ */
+async function ensureAdcLogin(): Promise<void> {
+  for (;;) {
+    checking("Checking Google ADC");
+    const result = await probeAdcToken();
+    if (result.ok) {
+      okClear("ADC is configured and working");
+      return;
+    }
+    failClear(`ADC not ready — ${result.message}`);
+
+    console.log(`${DIM}Pocket CEP needs a Workspace admin's ADC to call the${RESET}`);
+    console.log(`${DIM}Admin SDK + Admin Reports API. Run these in another terminal:${RESET}\n`);
+    console.log(
+      `  ${CYAN}gcloud auth application-default login \\${RESET}\n` +
+        `  ${CYAN}  --scopes="https://www.googleapis.com/auth/admin.reports.audit.readonly,https://www.googleapis.com/auth/admin.directory.orgunit.readonly,https://www.googleapis.com/auth/cloud-platform"${RESET}`,
+    );
+    console.log(
+      `  ${CYAN}gcloud auth application-default set-quota-project YOUR_PROJECT_ID${RESET}\n`,
+    );
+
+    const next = await select<"recheck" | "skip">({
+      message: "When you're ready:",
+      default: "recheck",
+      choices: [
+        {
+          name: "I've logged in — re-check now",
+          value: "recheck",
+          description: "Verifies the token exchange succeeds.",
+        },
+        {
+          name: "Skip for now",
+          value: "skip",
+          description: "`npm run doctor` will verify once you've logged in.",
+        },
+      ],
+    });
+
+    if (next === "skip") {
+      note("Skipping ADC check. Run `npm run doctor` after logging in to verify.");
       return;
     }
   }
-  okClear("`gcloud` is installed");
-
-  checking("Checking Google ADC");
-  const result = await probeAdcToken();
-  if (result.ok) {
-    okClear("ADC is configured and working");
-    return;
-  }
-  failClear(`ADC not ready — ${result.message}`);
-
-  console.log(`${DIM}Pocket CEP needs a Google Workspace admin's ADC to call the`);
-  console.log(`Admin SDK and Admin Reports API. Run these in another terminal:${RESET}\n`);
-  console.log(
-    `  ${CYAN}gcloud auth application-default login --scopes="https://www.googleapis.com/auth/admin.reports.audit.readonly,https://www.googleapis.com/auth/admin.directory.orgunit.readonly,https://www.googleapis.com/auth/cloud-platform"${RESET}`,
-  );
-  console.log(`  ${CYAN}gcloud auth application-default set-quota-project YOUR_PROJECT_ID${RESET}\n`);
-
-  const again = await confirm({
-    message: "Re-check ADC now?",
-    default: true,
-  });
-
-  if (!again) {
-    note("Skipping ADC re-check. `npm run doctor` will flag it again later.");
-    return;
-  }
-
-  checking("Re-checking Google ADC");
-  const retry = await probeAdcToken();
-  if (retry.ok) okClear("ADC is configured and working");
-  else failClear(`Still not ready — ${retry.message}`);
 }
 
 /**
- * Step 7: Optional MCP URL override. We probe the default first so the
- * user can just accept it if they're running `npm run dev:full`.
+ * Step 5: in service_account mode we need Google ADC. Walks through
+ * both the "install gcloud" and "log in" checkpoints with a
+ * re-check-or-skip loop at each step so the user controls the pace.
+ */
+async function walkAdcSetup() {
+  banner("Step 5 · Google ADC", "Service account mode uses your gcloud ADC credentials.");
+  const gcloudOk = await ensureGcloudInstalled();
+  if (!gcloudOk) return;
+  await ensureAdcLogin();
+}
+
+const DEFAULT_MCP_URL = "http://localhost:4000/mcp";
+
+/**
+ * Step 6: MCP server URL. Offers the recommended local path (Pocket
+ * CEP starts the official `@google/chrome-enterprise-premium-mcp`
+ * npx package via `npm run dev:full`) and a custom-URL escape hatch
+ * for users who run their own MCP deployment.
  */
 async function chooseMcpUrl(current: string | undefined): Promise<string> {
-  banner("Step 6 · MCP server URL", "Where is the Chrome Enterprise Premium MCP server running?");
+  banner("Step 6 · MCP server", "Where is the Chrome Enterprise Premium MCP server running?");
 
-  const fallback = current || "http://localhost:4000/mcp";
+  const isCustom = current !== undefined && current !== "" && current !== DEFAULT_MCP_URL;
+
+  const choice = await select<"local" | "custom">({
+    message: "How should the MCP server run?",
+    default: isCustom ? "custom" : "local",
+    choices: [
+      {
+        name: "Let Pocket CEP launch it for you (recommended)",
+        value: "local",
+        description:
+          "`npm run dev:full` starts `npx @google/chrome-enterprise-premium-mcp` on :4000.",
+      },
+      {
+        name: "Point at an already-running MCP server",
+        value: "custom",
+        description: "I run the MCP server myself — ask me for the URL.",
+      },
+    ],
+  });
+
+  if (choice === "local") {
+    note(`Using ${DEFAULT_MCP_URL}. Start it later with \`npm run dev:full\`.`);
+    return DEFAULT_MCP_URL;
+  }
 
   return input({
     message: "MCP_SERVER_URL:",
-    default: fallback,
+    default: isCustom ? current : DEFAULT_MCP_URL,
     validate: async (value) => {
       const url = value.trim();
       if (!url) return "URL is required";
