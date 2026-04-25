@@ -24,10 +24,11 @@
 
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
+import { spawn, type ChildProcess } from "node:child_process";
 import { serverSchema, type ServerEnv } from "./env";
 import { getErrorMessage } from "./errors";
 import { isAuthError } from "./auth-errors";
-import { LOG_TAGS } from "./constants";
+import { DEFAULT_MCP_URL, LOG_TAGS, MCP_NPX_PACKAGE } from "./constants";
 import { getDefaultModelId } from "./models";
 import {
   PASS,
@@ -66,6 +67,56 @@ function parseEnvFile(filePath: string): Record<string, string> {
     env[trimmed.slice(0, eqIndex).trim()] = trimmed.slice(eqIndex + 1).trim();
   }
   return env;
+}
+
+/**
+ * Starts the upstream MCP server temporarily — same npx invocation
+ * `npm run dev:full` uses — and waits for it to become reachable. Used
+ * by the MCP probe when the URL is the managed default and the user
+ * almost certainly hasn't started the server themselves.
+ *
+ * Returns the live probe result + the child handle so the caller can
+ * kill it after running tools/prompts checks. Returns null on spawn
+ * failure (npx not on PATH, child exited early, or the 60-second
+ * reachability budget expired — generous because first-time npx has
+ * to download the package).
+ */
+async function tryStartManagedMcpServer(
+  url: string,
+): Promise<{ child: ChildProcess; result: CheckResult } | null> {
+  process.stdout.write(
+    `\n  \x1b[2mMCP server not running. Starting \`${MCP_NPX_PACKAGE}\` temporarily…\x1b[0m`,
+  );
+
+  const child = spawn("npx", [MCP_NPX_PACKAGE], {
+    env: { ...process.env, PORT: "4000", GCP_STDIO: "false", LOG_LEVEL: "error" },
+    stdio: "ignore",
+  });
+
+  let spawnError: Error | null = null;
+  child.once("error", (err) => {
+    spawnError = err instanceof Error ? err : new Error(String(err));
+  });
+
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    if (spawnError !== null || child.exitCode !== null) {
+      process.stdout.write("\n");
+      if (!child.killed) child.kill("SIGTERM");
+      return null;
+    }
+    await new Promise((r) => setTimeout(r, 500));
+    process.stdout.write(".");
+    const probe = await probeMcpServer(url);
+    if (probe.ok) {
+      process.stdout.write(" ready.\n");
+      return { child, result: probe };
+    }
+  }
+
+  process.stdout.write(" timed out.\n");
+  if (!child.killed) child.kill("SIGTERM");
+  return null;
 }
 
 /**
@@ -249,7 +300,7 @@ async function main() {
 
   printActiveFlavor(data);
 
-  const restoreConsole = muteLibraryLogs();
+  let restoreConsole = muteLibraryLogs();
 
   const needsAdc = data.AUTH_MODE === "service_account";
   const adcPromise: Promise<CheckResult | null> = needsAdc
@@ -263,11 +314,30 @@ async function main() {
 
   const mcpPromise = probeMcpServer(data.MCP_SERVER_URL);
 
-  const [adcResult, providerResult, mcpResult] = await Promise.all([
+  const [adcResult, providerResult, initialMcpResult] = await Promise.all([
     adcPromise,
     providerPromise,
     mcpPromise,
   ]);
+
+  // If the URL is the managed default and the probe failed, the user
+  // is almost certainly on the managed flow and hasn't run dev:full
+  // themselves. Auto-start the server so the probe is meaningful.
+  let mcpResult = initialMcpResult;
+  let mcpChild: ChildProcess | null = null;
+  if (!initialMcpResult.ok && data.MCP_SERVER_URL === DEFAULT_MCP_URL) {
+    restoreConsole();
+    const started = await tryStartManagedMcpServer(data.MCP_SERVER_URL);
+    if (started) {
+      mcpResult = started.result;
+      mcpChild = started.child;
+    }
+    restoreConsole = muteLibraryLogs();
+  }
+  process.once("SIGINT", () => {
+    if (mcpChild && !mcpChild.killed) mcpChild.kill("SIGTERM");
+    process.exit(130);
+  });
 
   const adcLines: CheckLine[] = [];
   if (adcResult) {
@@ -301,13 +371,15 @@ async function main() {
     ),
   ];
 
-  const mcpLines: CheckLine[] = [
-    probeLine(
-      mcpResult,
-      "Why: every chat turn opens a fresh MCP connection to call tools and fetch prompts.",
-      "Fix: npm run dev:full   (or start the MCP server separately on PORT=4000)",
-    ),
-  ];
+  const isManagedDefault = data.MCP_SERVER_URL === DEFAULT_MCP_URL;
+  const autoStartFailed = !initialMcpResult.ok && isManagedDefault && !mcpChild;
+  const mcpWhy = mcpChild
+    ? "Doctor started the MCP server temporarily for this probe; it exits with the doctor."
+    : "Why: every chat turn opens a fresh MCP connection to call tools and fetch prompts.";
+  const mcpFix = autoStartFailed
+    ? "Doctor's `npx` auto-start didn't become reachable in 60s. Run `npm run dev:full` manually."
+    : "Fix: npm run dev:full   (or start the MCP server separately on PORT=4000)";
+  const mcpLines: CheckLine[] = [probeLine(mcpResult, mcpWhy, mcpFix)];
 
   if (mcpResult.ok) {
     const { listMcpTools, listMcpPrompts } = await import("./mcp-client");
@@ -353,6 +425,8 @@ async function main() {
   );
   printSection("LLM provider", `${data.LLM_PROVIDER} via Vercel AI SDK`, providerLines);
   printSection("MCP server", `JSON-RPC 2.0 over HTTP @ ${data.MCP_SERVER_URL}`, mcpLines);
+
+  if (mcpChild && !mcpChild.killed) mcpChild.kill("SIGTERM");
 
   const allLines = [...staticLines, ...adcLines, ...providerLines, ...mcpLines];
   finishWithSummary(countFailures(allLines), countPasses(allLines));

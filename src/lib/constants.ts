@@ -48,6 +48,21 @@ export const LOG_TAGS = {
 export const MAX_AGENT_ITERATIONS = 10;
 
 /**
+ * Default MCP server URL used when the user chose the managed flow
+ * (Pocket CEP launches the server itself via `npm run dev:full`).
+ * Mirrored as the Zod default in `env.ts`; exported here so the setup
+ * CLI and doctor can recognise the managed-vs-custom split.
+ */
+export const DEFAULT_MCP_URL = "http://localhost:4000/mcp";
+
+/**
+ * The npx invocation `npm run dev:full` uses to launch the upstream
+ * MCP server. The doctor reuses this when auto-starting the server
+ * for a managed-flow probe so a single source of truth exists.
+ */
+export const MCP_NPX_PACKAGE = "@google/chrome-enterprise-premium-mcp@latest";
+
+/**
  * Builds the system prompt injected into every LLM conversation. The
  * selectedUserEmail is interpolated so the LLM knows which user the
  * admin is investigating and can scope its MCP tool calls accordingly.

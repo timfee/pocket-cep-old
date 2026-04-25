@@ -26,6 +26,7 @@ import {
   probeMcpServer,
 } from "../src/lib/doctor-checks";
 import { formatGcloudLoginCommand } from "../src/lib/google-scopes";
+import { DEFAULT_MCP_URL } from "../src/lib/constants";
 import { inferLlmProvider, type EnvMap } from "./setup-helpers";
 
 const ENV_PATH = resolve(process.cwd(), ".env.local");
@@ -164,7 +165,7 @@ async function chooseAuthMode(current: string | undefined) {
 }
 
 /**
- * Step 2: LLM provider. Validation happens on the API-key step
+ * Step 3: LLM provider. Validation happens on the API-key step
  * downstream — we only pick the provider here. The default is
  * inferred from `.env.local` (explicit `LLM_PROVIDER` first, then
  * which API key happens to be set) so re-running setup with an
@@ -172,7 +173,7 @@ async function chooseAuthMode(current: string | undefined) {
  * always landing on Claude.
  */
 async function chooseLlmProvider(existing: EnvMap) {
-  banner("Step 2 · LLM provider", "Which model powers the chat agent?");
+  banner("Step 3 · LLM provider", "Which model powers the chat agent?");
   const inferred = inferLlmProvider(existing);
   if (inferred.reason) note(inferred.reason);
   return select<"claude" | "gemini">({
@@ -194,12 +195,14 @@ async function chooseLlmProvider(existing: EnvMap) {
 }
 
 /**
- * Step 3: BETTER_AUTH_SECRET. If the current value looks unsafe
- * (missing or the placeholder from .env.local.example), we offer
- * to generate a fresh one. Otherwise we leave it untouched.
+ * Step 2: BETTER_AUTH_SECRET. Comes right after auth mode so the auth
+ * setup stays grouped (the LLM provider+key pair flows next as a
+ * single unit). If the current value looks unsafe (missing or the
+ * placeholder from .env.local.example), we offer to generate a fresh
+ * one. Otherwise we leave it untouched.
  */
 async function chooseAuthSecret(current: string | undefined): Promise<string> {
-  banner("Step 3 · BetterAuth signing secret", "Signs the session cookie. Treat it like a password.");
+  banner("Step 2 · BetterAuth signing secret", "Signs the session cookie. Treat it like a password.");
 
   const placeholder = "please-change-me-to-a-real-secret";
   const hasReal = current && current !== placeholder && current.length >= 32;
@@ -484,8 +487,6 @@ async function walkAdcSetup() {
   await ensureAdcLogin();
 }
 
-const DEFAULT_MCP_URL = "http://localhost:4000/mcp";
-
 /**
  * Step 6: MCP server URL. The localhost default is opaque without
  * context — this step explains that the MCP server is a separate
@@ -584,8 +585,8 @@ async function main() {
   const existing = readExistingEnv();
 
   const authMode = await chooseAuthMode(existing.AUTH_MODE);
-  const llmProvider = await chooseLlmProvider(existing);
   const authSecret = await chooseAuthSecret(existing.BETTER_AUTH_SECRET);
+  const llmProvider = await chooseLlmProvider(existing);
 
   const apiKey =
     llmProvider === "claude"
