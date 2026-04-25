@@ -1,14 +1,12 @@
 /**
  * @file Zod-validated environment variables for Pocket CEP.
  *
- * Uses discriminated unions to enforce that each auth mode and LLM
- * provider has its required credentials. Invalid combinations are
- * caught at startup with clear error messages.
- *
- * The two independent axes — AUTH_MODE and LLM_PROVIDER — form a 2x2 matrix
- * of valid configurations. Zod's discriminatedUnion on each axis means
- * you get targeted error messages ("ANTHROPIC_API_KEY is required when
- * LLM_PROVIDER is claude") instead of a generic "missing field" error.
+ * The two independent axes — AUTH_MODE and LLM_PROVIDER — form a 2x2
+ * matrix of valid configurations. Each branch of the discriminated
+ * union enforces the credentials its mode actually needs (Google OAuth
+ * client ID/secret in user_oauth mode). LLM provider keys are optional
+ * here; the chat route prefers a BYOK header and only falls back to
+ * the env key.
  */
 
 import { z } from "zod";
@@ -71,12 +69,7 @@ const authSchema = z.discriminatedUnion("AUTH_MODE", [serviceAccountAuth, userOA
 
 const claudeProvider = z.object({
   LLM_PROVIDER: z.literal("claude"),
-  ANTHROPIC_API_KEY: z
-    .string()
-    .min(
-      1,
-      'ANTHROPIC_API_KEY is required when LLM_PROVIDER is "claude". Get one at https://console.anthropic.com/',
-    ),
+  ANTHROPIC_API_KEY: z.string().default(""),
   GOOGLE_AI_API_KEY: z.string().default(""),
   OPENAI_API_KEY: z.string().default(""),
 });
@@ -84,12 +77,7 @@ const claudeProvider = z.object({
 const geminiProvider = z.object({
   LLM_PROVIDER: z.literal("gemini"),
   ANTHROPIC_API_KEY: z.string().default(""),
-  GOOGLE_AI_API_KEY: z
-    .string()
-    .min(
-      1,
-      'GOOGLE_AI_API_KEY is required when LLM_PROVIDER is "gemini". Get one at https://aistudio.google.com/apikey',
-    ),
+  GOOGLE_AI_API_KEY: z.string().default(""),
   OPENAI_API_KEY: z.string().default(""),
 });
 

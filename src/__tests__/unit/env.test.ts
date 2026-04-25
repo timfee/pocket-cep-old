@@ -58,16 +58,20 @@ describe("serverSchema", () => {
     ).toBe(false);
   });
 
-  it("rejects claude without ANTHROPIC_API_KEY", () => {
-    expect(serverSchema.safeParse({ ...VALID_CLAUDE_SA, ANTHROPIC_API_KEY: "" }).success).toBe(
-      false,
-    );
+  it("accepts claude without ANTHROPIC_API_KEY (BYOK supplies the key at request time)", () => {
+    const result = serverSchema.safeParse({ ...VALID_CLAUDE_SA, ANTHROPIC_API_KEY: "" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.ANTHROPIC_API_KEY).toBe("");
+    }
   });
 
-  it("rejects gemini without GOOGLE_AI_API_KEY", () => {
-    expect(serverSchema.safeParse({ ...VALID_GEMINI_OAUTH, GOOGLE_AI_API_KEY: "" }).success).toBe(
-      false,
-    );
+  it("accepts gemini without GOOGLE_AI_API_KEY (BYOK supplies the key at request time)", () => {
+    const result = serverSchema.safeParse({ ...VALID_GEMINI_OAUTH, GOOGLE_AI_API_KEY: "" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.GOOGLE_AI_API_KEY).toBe("");
+    }
   });
 
   it("rejects invalid enum values", () => {

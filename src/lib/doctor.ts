@@ -484,10 +484,13 @@ async function main() {
     ? probeAdcToken()
     : Promise.resolve(null);
 
-  const providerPromise: Promise<CheckResult> =
-    data.LLM_PROVIDER === "claude"
+  const providerKey =
+    data.LLM_PROVIDER === "claude" ? data.ANTHROPIC_API_KEY : data.GOOGLE_AI_API_KEY;
+  const providerPromise: Promise<CheckResult | null> = providerKey
+    ? data.LLM_PROVIDER === "claude"
       ? probeAnthropicKey(data.ANTHROPIC_API_KEY)
-      : probeGeminiKey(data.GOOGLE_AI_API_KEY);
+      : probeGeminiKey(data.GOOGLE_AI_API_KEY)
+    : Promise.resolve(null);
 
   const mcpPromise = probeMcpServer(data.MCP_SERVER_URL);
 
@@ -558,15 +561,24 @@ async function main() {
   }
 
   const providerLines: CheckLine[] = [
-    probeLine(
-      providerResult,
-      data.LLM_PROVIDER === "claude"
-        ? "Why: the chat route calls @ai-sdk/anthropic on every message."
-        : "Why: the chat route calls @ai-sdk/google on every message.",
-      data.LLM_PROVIDER === "claude"
-        ? "Fix: set ANTHROPIC_API_KEY in .env.local (https://console.anthropic.com/)"
-        : "Fix: set GOOGLE_AI_API_KEY in .env.local (https://aistudio.google.com/apikey)",
-    ),
+    providerResult
+      ? probeLine(
+          providerResult,
+          data.LLM_PROVIDER === "claude"
+            ? "Why: the chat route calls @ai-sdk/anthropic on every message."
+            : "Why: the chat route calls @ai-sdk/google on every message.",
+          data.LLM_PROVIDER === "claude"
+            ? "Fix: set ANTHROPIC_API_KEY in .env.local (https://console.anthropic.com/)"
+            : "Fix: set GOOGLE_AI_API_KEY in .env.local (https://aistudio.google.com/apikey)",
+        )
+      : {
+          status: "warn",
+          title: `${data.LLM_PROVIDER === "claude" ? "ANTHROPIC_API_KEY" : "GOOGLE_AI_API_KEY"} not set — BYOK-only mode`,
+          details: [
+            "The chat route will fail until a key is supplied via the top-bar model picker.",
+            "Set the env var in .env.local to skip BYOK and probe the key here.",
+          ],
+        },
   ];
 
   const mcpWhy = mcpChild
