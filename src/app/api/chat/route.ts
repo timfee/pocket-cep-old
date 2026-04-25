@@ -18,9 +18,9 @@
 import { NextResponse } from "next/server";
 import { streamText, convertToModelMessages, stepCountIs } from "ai";
 import type { LanguageModel, UIMessage } from "ai";
-import { anthropic, createAnthropic } from "@ai-sdk/anthropic";
-import { google, createGoogleGenerativeAI } from "@ai-sdk/google";
-import { openai, createOpenAI } from "@ai-sdk/openai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAI } from "@ai-sdk/openai";
 import { getGoogleAccessToken } from "@/lib/access-token";
 import { getEnv, type ServerEnv } from "@/lib/env";
 import { getMcpToolsForAiSdk } from "@/lib/mcp-tools";
@@ -37,22 +37,21 @@ import { BYOK_HEADER, parseByokHeader } from "@/lib/model-preferences";
 import { respondWithApiError, unauthenticatedResponse } from "@/lib/api-response";
 
 /**
- * Per-provider SDK bindings. Maps each {@link ModelProvider} to the
- * default (env-backed) factory, the BYOK-capable factory, and the
- * server env var name. Replaces a three-branch if/else tree in
- * `buildModel` with a single lookup.
+ * Per-provider SDK bindings. We always go through the `create` factory
+ * with an explicit `apiKey` rather than the env-backed default — the
+ * Vercel AI SDK's @ai-sdk/google reads `GOOGLE_GENERATIVE_AI_API_KEY`,
+ * which doesn't match our `GOOGLE_AI_API_KEY` env name.
  */
 const PROVIDER_SDK: Record<
   ModelProvider,
   {
-    factory: (id: string) => LanguageModel;
     create: (opts: { apiKey: string }) => (id: string) => LanguageModel;
     envKey: ModelEnvKey;
   }
 > = {
-  anthropic: { factory: anthropic, create: createAnthropic, envKey: "ANTHROPIC_API_KEY" },
-  openai: { factory: openai, create: createOpenAI, envKey: "OPENAI_API_KEY" },
-  google: { factory: google, create: createGoogleGenerativeAI, envKey: "GOOGLE_AI_API_KEY" },
+  anthropic: { create: createAnthropic, envKey: "ANTHROPIC_API_KEY" },
+  openai: { create: createOpenAI, envKey: "OPENAI_API_KEY" },
+  google: { create: createGoogleGenerativeAI, envKey: "GOOGLE_AI_API_KEY" },
 };
 
 export async function POST(request: Request) {
@@ -141,5 +140,5 @@ function buildModel(
       `${option.label} requires ${envKey}. Set it in .env.local or paste a key via the model picker.`,
     );
   }
-  return byokKey ? sdk.create({ apiKey })(option.id) : sdk.factory(option.id);
+  return sdk.create({ apiKey })(option.id);
 }

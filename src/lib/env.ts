@@ -97,12 +97,27 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  * merges both discriminated unions into a single flat type, so `getEnv()`
  * returns one object with all fields from both axes.
  */
+/**
+ * When `LLM_PROVIDER` is unset, pick the provider the developer
+ * actually has a key for. Without this, a user who set only
+ * `GOOGLE_AI_API_KEY` would still default to Claude and hit a
+ * "missing key" error on first chat.
+ */
+function inferLlmProvider(raw: Record<string, unknown>): "claude" | "gemini" {
+  const explicit = typeof raw.LLM_PROVIDER === "string" ? raw.LLM_PROVIDER : "";
+  if (explicit) return explicit as "claude" | "gemini";
+  const hasGemini = typeof raw.GOOGLE_AI_API_KEY === "string" && raw.GOOGLE_AI_API_KEY.trim() !== "";
+  const hasClaude = typeof raw.ANTHROPIC_API_KEY === "string" && raw.ANTHROPIC_API_KEY.trim() !== "";
+  if (hasGemini && !hasClaude) return "gemini";
+  return "claude";
+}
+
 export const serverSchema = z.preprocess((raw) => {
   if (!isRecord(raw)) return raw;
   return {
     ...raw,
     AUTH_MODE: raw.AUTH_MODE || "service_account",
-    LLM_PROVIDER: raw.LLM_PROVIDER || "claude",
+    LLM_PROVIDER: inferLlmProvider(raw),
   };
 }, authSchema.and(llmSchema));
 
