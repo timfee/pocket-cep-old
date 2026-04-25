@@ -75,11 +75,13 @@ a setup-required screen pointing back at `npm run setup`.
 
 Open http://localhost:3000 and sign in with Google.
 
-Point `dev:full` at a local MCP checkout by overriding `MCP_SERVER_CMD`:
+Point `dev:full` at a local MCP checkout, or work around a registry that doesn't carry the npm package, by setting `MCP_SERVER_CMD` once in `.env.local` (both `npm run dev:full` and `npm run doctor` read it):
 
-```bash
-MCP_SERVER_CMD="node ../cmcp/mcp-server.js" npm run dev:full
 ```
+MCP_SERVER_CMD=node ../cmcp/mcp-server.js
+```
+
+If MCP isn't reachable, `/dashboard` shows a setup-required page (the same treatment as missing env vars) instead of partially loading.
 
 ## Configuration
 
@@ -107,7 +109,7 @@ at the bottom). Uncomment only what you need to change.
 | `ANTHROPIC_API_KEY` | — | Required when `LLM_PROVIDER=claude`. |
 | `GOOGLE_AI_API_KEY` | — | Required when `LLM_PROVIDER=gemini`. |
 | `MCP_SERVER_URL` | `http://localhost:4000/mcp` | CEP MCP server HTTP endpoint. |
-| `MCP_SERVER_CMD` | *(shell-only)* | Shell env var read by `npm run dev:full` to start the MCP server. Not validated by the app. |
+| `MCP_SERVER_CMD` | *(unset)* | Override the MCP server start command. Read by `npm run dev:full` and `npm run doctor` from `.env.local` or the shell. Default: `npx @google/chrome-enterprise-premium-mcp@latest`. Not parsed by the app at runtime. |
 
 All app-side variables are validated at startup with Zod — missing or malformed values surface as a startup error pointing you to the fix.
 
@@ -185,17 +187,19 @@ Pocket CEP needs the Chrome Enterprise Premium MCP server running in HTTP mode o
 npm run dev:full
 ```
 
-`dev:full` uses `concurrently` to run `next dev` and the MCP server side-by-side, prefixed with `[app]` and `[mcp]`. By default it invokes `npx @google/chrome-enterprise-premium-mcp@latest`. Override by setting `MCP_SERVER_CMD` in your shell:
+`dev:full` is a tsx wrapper (`scripts/dev-full.ts`) that loads `.env`/`.env.local`, then runs `concurrently` with two streams prefixed `[app]` and `[mcp]`:
 
-```bash
-# Pull a specific tag:
-MCP_SERVER_CMD="npx @google/chrome-enterprise-premium-mcp@0.4.0" npm run dev:full
+- `next dev`
+- `tail -f /dev/null | GCP_STDIO=false PORT=4000 LOG_LEVEL=warn $MCP_SERVER_CMD` (defaulting to `npx @google/chrome-enterprise-premium-mcp@latest` when the env var is unset). The leading `tail -f /dev/null |` keeps the MCP child's stdin open — the upstream server treats stdin EOF as a shutdown signal even in HTTP mode.
 
-# Run a local checkout:
-MCP_SERVER_CMD="node ../cmcp/mcp-server.js" npm run dev:full
+`MCP_SERVER_CMD` can live in `.env.local` (preferred — persists across sessions) or be exported in your shell. Examples:
+
 ```
-
-`dev:full` injects `GCP_STDIO=false PORT=4000 LOG_LEVEL=warn` around whatever command it runs.
+# .env.local (no quoting; values are read literally)
+MCP_SERVER_CMD=npx @google/chrome-enterprise-premium-mcp@0.4.0
+# or:
+MCP_SERVER_CMD=node ../cmcp/mcp-server.js
+```
 
 ### Manual start (two terminals)
 
@@ -264,65 +268,93 @@ For workshops where multiple attendees use the same instance:
 
 ```
 pocket-cep/
-  .env                          # Committed defaults with documentation
-  .env.local                    # Secrets (gitignored)
-  .env.local.example            # Comprehensive template
-  AGENTS.md                     # Coding standards
+  .env                          # Committed defaults + documentation
+  .env.local                    # Secrets + per-developer overrides (gitignored)
+  .env.local.example            # Template for .env.local
+  AGENTS.md                     # Coding standards + design system
   CLAUDE.md -> AGENTS.md        # Symlink for Claude Code
   GEMINI.md -> AGENTS.md        # Symlink for Gemini
+
+  scripts/
+    setup.ts                    # Interactive `.env.local` builder (clack)
+    setup-helpers.ts            # Pure helpers (LLM-provider inference)
+    dev-full.ts                 # Loads .env*, runs concurrently for dev:full
+    postinstall.js              # Print-only hint to run `npm run setup`
 
   src/
     app/
       layout.tsx                # Root layout — Roboto + Roboto Mono via next/font
       page.tsx                  # Landing page with Google sign-in
-      globals.css               # Tailwind v4 + Material Design tokens + prose styles
-      dashboard/page.tsx        # Main UI: sidebar + chat + inspector
+      globals.css               # Tailwind v4 + MD3 tokens + prose styles
+      dashboard/
+        page.tsx                # Server-rendered shell (RSC pre-fetch)
+        dashboard-client.tsx    # Interactive shell: rail + main + chat
+        loading.tsx             # Suspense fallback
+        error.tsx               # Per-route error boundary
       api/
-        auth/[...all]/route.ts  # BetterAuth catch-all
-        auth/auto-session/route.ts  # Mints an anonymous session in SA mode
-        users/route.ts          # GET: Admin SDK directory search
-        users/activity/route.ts # GET: emails with recent Chrome audit activity
-        chat/route.ts           # POST: Vercel AI SDK streamText response
-        tools/route.ts          # GET: available MCP tools (for inspector)
-        prompts/route.ts        # GET: server prompts catalog; POST: expand by name
+        auth/[...all]/route.ts            # BetterAuth catch-all
+        auth/auto-session/route.ts        # Mints anonymous session in SA mode
+        auth/health/route.ts              # ADC health probe (banner re-check)
+        users/route.ts                    # Admin SDK directory search
+        users/activity/route.ts           # Recent Chrome audit-log activity
+        chat/route.ts                     # streamText response (Vercel AI SDK)
+        tools/route.ts                    # MCP tool catalog
+        prompts/route.ts                  # MCP prompts (list + expand)
 
     components/
-      app-bar.tsx               # Top command bar (brand + /-hint + session chip)
-      auth-banner.tsx           # Sticky banner when ADC credentials need refresh
+      app-bar.tsx               # Top wordmark + session chip + gradient strip
+      auth-banner.tsx           # Sticky banner when ADC needs re-auth
       auth-health-provider.tsx  # Context + window-event listener for auth state
-      user-selector.tsx         # Directory combobox with activity-weighted ranking
-      activity-roster.tsx       # Sidebar "Recent activity" list
-      chat-panel.tsx            # Chat host — useChat, scroll, empty states
+      sign-in-button.tsx        # Google sign-in (user_oauth mode)
+      mode-provider.tsx         # Active flavor (auth-mode + LLM provider) context
+      mode-badges.tsx           # Top-bar flavor pill + model picker host
+      model-selector.tsx        # Top-bar model dropdown + BYOK editor
+      swr-provider.tsx          # SWR config (auth-aware fetcher, dedup)
+      user-selector.tsx         # Directory combobox + activity-weighted ranking
+      activity-roster.tsx       # Sidebar "Chrome audit events" list
+      inspector-panel.tsx       # MCP tool-invocation drawer
+      chat-panel.tsx            # Chat host — useChat, scroll, empty state
       chat-message.tsx          # Message bubble + tool-part cards + prompt chip
       chat-input.tsx            # Auto-growing textarea + Enter/Stop controls
-      inspector-panel.tsx       # MCP tool invocation drawer
-      sign-in-button.tsx        # Google sign-in button
+      json-tree.tsx             # Recursive JSON viewer for tool outputs
       ui/skeleton.tsx           # Loading skeleton
       ui/badge.tsx              # Generic badge
 
     lib/
-      env.ts                    # Zod-validated environment (discriminated unions)
+      env.ts                    # Zod env schema + EnvValidationError
+      env-error-page.ts         # Setup-required HTML (env + MCP variants)
       errors.ts                 # Shared error message extraction
-      auth.ts                   # BetterAuth server config (stateless, no DB)
+      auth.ts                   # BetterAuth server config (stateless)
       auth-client.ts            # BetterAuth browser client
-      auth-errors.ts            # Typed AuthError + toAuthError classifier
-      auth-aware-fetch.ts       # fetch wrapper that dispatches auth-error events
-      access-token.ts           # Google OAuth token retrieval (user_oauth mode)
-      adc.ts                    # ADC token + quota-project helpers
+      auth-errors.ts            # Typed AuthError + classifier
+      auth-aware-fetch.ts       # fetch wrapper dispatching auth-error events
+      access-token.ts           # OAuth token retrieval (user_oauth mode)
+      adc.ts                    # ADC token + cached quota-project helpers
       admin-sdk.ts              # Directory API REST wrapper
+      activity-data.ts          # Admin Reports API activity fetcher
+      api-response.ts           # Shared API error-response helpers
+      cache-key.ts              # Per-caller cache-key builder
       cn.ts                     # clsx + tailwind-merge helper
-      constants.ts              # System prompt, default models, log tags
-      mcp-client.ts             # MCP SDK StreamableHTTP wrapper (tools + prompts)
-      mcp-tools.ts              # AI SDK tool adapter + per-caller catalog cache
-      tool-part.ts              # Shared ToolUIPart/DynamicToolUIPart type + label
-      doctor.ts                 # Environment diagnostic script
-      doctor-checks.ts          # Shared probe helpers (ADC / MCP / Anthropic / Gemini)
+      constants.ts              # System prompt, log tags, MCP defaults
+      doctor.ts                 # Diagnostic script (probes + auto-spawn MCP)
+      doctor-checks.ts          # Shared probe helpers
+      google-scopes.ts          # Canonical OAuth scope list + gcloud cmd builder
+      http-cache.ts             # ETag + cache-control helpers
+      mcp-client.ts             # StreamableHTTP wrapper (tools + prompts)
+      mcp-tools.ts              # AI SDK tool adapter + caller catalog cache
+      models.ts                 # Model option catalog + BYOK provider mapping
+      model-preferences.ts      # localStorage facade for selected model + BYOK
+      server-cache.ts           # Process-local caches (TTL + tags)
+      session.ts                # Session guard + helpers
+      storage.ts                # SSR-safe localStorage hook
+      tool-part.ts              # Tool-UI-part type + label
 
-    proxy.ts                    # Route protection (Next.js 16 proxy convention)
+    proxy.ts                    # Route protection + env/MCP setup-blocker pages
 
     __tests__/
-      unit/                     # env, mcp-client (mocked SDK), access-token
-      integration/              # admin-sdk query translation
+      unit/                     # env, env-error-page, adc, google-scopes,
+                                # setup-helpers, postinstall, mcp-*, etc.
+      integration/              # api routes + proxy
       e2e/                      # Playwright: landing, chat flow, scroll
 ```
 
@@ -330,7 +362,10 @@ pocket-cep/
 
 | Command | What it does |
 |---------|-------------|
-| `npm run dev` | Start the dev server on port 3000 |
+| `npm run setup` | Interactive `.env.local` builder — guided prompts for auth mode, API keys, ADC, and MCP. Validates each value live. |
+| `npm run dev` | Start `next dev` on port 3000 (Pocket CEP only — no MCP server). |
+| `npm run dev:full` | Start `next dev` + the MCP server in parallel (`[app]` and `[mcp]` log streams). Honours `MCP_SERVER_CMD` from `.env.local`. |
+| `npm run doctor` | Probe env, ADC, the LLM provider, and MCP. Auto-starts the MCP server temporarily if the URL is the managed default and it isn't running. |
 | `npm run build` | Production build |
 | `npm run start` | Serve production build on port 3000 |
 | `npm run check` | Typecheck + lint + unit tests + integration tests |
@@ -341,7 +376,6 @@ pocket-cep/
 | `npm run test:integration` | Run integration tests only |
 | `npm run test:watch` | Run tests in watch mode |
 | `npm run test:e2e` | Run Playwright E2E tests |
-| `npm run doctor` | Check your environment (env vars, MCP server, LLM API) |
 
 ## Testing
 
