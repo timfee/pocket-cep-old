@@ -40,10 +40,20 @@ npm run setup
 npm run dev:full
 ```
 
-Prefer to configure by hand? Copy `.env.local.example` to `.env.local`
-and fill in the blanks, then run `npm run doctor` to verify. Service-account
-mode also needs ADC — paste this single-line command (do not break it
-across lines):
+Prefer to configure by hand? Pocket CEP splits configuration across
+two files:
+
+- `.env` (committed) — non-secret defaults like `AUTH_MODE` and
+  `LLM_PROVIDER`, with inline documentation for every option.
+- `.env.local` (gitignored) — your secrets and any per-developer
+  overrides; wins over `.env` for any key you set.
+
+Copy `.env.local.example` to `.env.local`, fill in the secrets at the
+top, uncomment any overrides you need, then run `npm run doctor` to
+verify. See [Configuration](#configuration) for the full breakdown.
+
+Service-account mode also needs ADC — paste this single-line command
+(do not break it across lines):
 
 ```bash
 gcloud auth application-default login --scopes="https://www.googleapis.com/auth/chrome.management.policy,https://www.googleapis.com/auth/chrome.management.reports.readonly,https://www.googleapis.com/auth/chrome.management.profiles.readonly,https://www.googleapis.com/auth/admin.reports.audit.readonly,https://www.googleapis.com/auth/admin.reports.usage.readonly,https://www.googleapis.com/auth/admin.directory.user.readonly,https://www.googleapis.com/auth/admin.directory.orgunit.readonly,https://www.googleapis.com/auth/admin.directory.customer.readonly,https://www.googleapis.com/auth/cloud-identity.policies,https://www.googleapis.com/auth/apps.licensing,https://www.googleapis.com/auth/cloud-platform"
@@ -93,7 +103,7 @@ at the bottom). Uncomment only what you need to change.
 | `GOOGLE_CLIENT_ID` | — | Required in `user_oauth` mode. |
 | `GOOGLE_CLIENT_SECRET` | — | Required in `user_oauth` mode. |
 | `LLM_PROVIDER` | `claude` | `claude` or `gemini`. |
-| `LLM_MODEL` | *(auto)* | Override. Defaults: `claude-sonnet-4-6` / `gemini-2.5-flash`. |
+| `LLM_MODEL` | *(auto)* | Override. Defaults come from `src/lib/models.ts` (currently `claude-sonnet-4-6` / `gemini-3-flash-preview`). |
 | `ANTHROPIC_API_KEY` | — | Required when `LLM_PROVIDER=claude`. |
 | `GOOGLE_AI_API_KEY` | — | Required when `LLM_PROVIDER=gemini`. |
 | `MCP_SERVER_URL` | `http://localhost:4000/mcp` | CEP MCP server HTTP endpoint. |
