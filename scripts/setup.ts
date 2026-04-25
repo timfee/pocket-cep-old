@@ -680,9 +680,10 @@ async function chooseMcpUrl(current: string | undefined): Promise<string> {
       "Most contributors use the official npm package, which\n" +
       "`npm run dev:full` launches alongside Next on port 4000:\n\n" +
       "  npx @google/chrome-enterprise-premium-mcp@latest\n\n" +
-      "If you've cloned the MCP source locally and want to run\n" +
-      "that instead, override the command when starting dev:\n\n" +
-      '  MCP_SERVER_CMD="node /path/to/cmcp/mcp-server.js" npm run dev:full\n\n' +
+      "If `npx` doesn't work on your network, or you've cloned the\n" +
+      "MCP source locally, set MCP_SERVER_CMD in .env.local — both\n" +
+      "`npm run dev:full` and `npm run doctor` honour it:\n\n" +
+      '  MCP_SERVER_CMD="node /path/to/cmcp/mcp-server.js"\n\n' +
       `Either way, Pocket CEP still dials ${DEFAULT_MCP_URL} —\n` +
       "the URL doesn't change; only what's on the other end does.",
     "About the MCP server",

@@ -322,6 +322,13 @@ async function main() {
   ];
 
   const env = loadEnvFiles();
+  // Inject loaded values into process.env so downstream code (the MCP
+  // auto-spawn, library calls, anything reading process.env directly)
+  // sees `.env.local` settings the same way Next.js does at runtime.
+  // Shell-exported vars take precedence — we only fill the gaps.
+  for (const [key, value] of Object.entries(env)) {
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
   const parseResult = serverSchema.safeParse(env);
 
   if (!parseResult.success) {

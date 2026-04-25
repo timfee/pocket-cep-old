@@ -9,7 +9,7 @@
   "scripts": {
     "clean": "rm -rf .next",
     "dev": "next dev",
-    "dev:full": "concurrently --kill-others-on-fail -n app,mcp -c blue,green \"next dev\" \"tail -f /dev/null | GCP_STDIO=false PORT=4000 LOG_LEVEL=warn ${MCP_SERVER_CMD:-npx @google/chrome-enterprise-premium-mcp@latest}\"",
+    "dev:full": "tsx scripts/dev-full.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint src/ --fix",
