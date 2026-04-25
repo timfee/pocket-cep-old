@@ -98,8 +98,15 @@ async function tryStartManagedMcpServer(
   const cmdOverride = process.env.MCP_SERVER_CMD?.trim();
   const description = cmdOverride ?? `npx --prefer-online ${MCP_NPX_PACKAGE}`;
 
+  // Long message printed once before the spinner — clack's spinner
+  // redraws in place, and a message that overflows the terminal width
+  // breaks the redraw (each frame shows up on a new line). Keep
+  // spinner messages short; carry the discoverable hint in a one-time
+  // log line above it.
+  p.log.info(`MCP server not running. Auto-starting:\n${description}`);
+
   const spinner = p.spinner();
-  spinner.start(`Starting \`${description}\` temporarily…`);
+  spinner.start("Probing reachability…");
 
   // `stdio: ["pipe", "pipe", "pipe"]` — keep an open writable pipe on
   // the child's stdin (the upstream MCP server treats stdin EOF as a
@@ -147,9 +154,10 @@ async function tryStartManagedMcpServer(
     }
 
     if (!hintShown && Date.now() - startedAt > AUTO_START_HINT_AFTER_MS) {
-      spinner.message(
-        `Still trying \`${description}\` — set \`MCP_SERVER_CMD\` in .env.local if your registry is slow`,
-      );
+      // Short message — clack's spinner redraws in place and long
+      // messages that wrap break the redraw. The discoverable
+      // override hint was already printed above the spinner.
+      spinner.message("Still trying… (set MCP_SERVER_CMD in .env.local to skip)");
       hintShown = true;
     }
 
@@ -282,14 +290,15 @@ function printPhase(title: string, subtitle: string, lines: CheckLine[]) {
  * mode × provider combinations the app will boot with.
  */
 function activeFlavorNote(data: ServerEnv): string {
+  // Each blurb stays under ~60 chars so the boxed `p.note()` doesn't
+  // wrap and break the right border. Longer rationale lives in
+  // README's Auth Modes / LLM Providers sections.
   const authBlurb =
     data.AUTH_MODE === "service_account"
-      ? "Server-side ADC authenticates every Google API call. No user sign-in; the dashboard loads as a shared 'service account' identity."
-      : "Users sign in with Google OAuth. Their access token is forwarded to the MCP server.";
+      ? "Shared identity, server-side ADC, no user sign-in."
+      : "Per-user sign-in, OAuth token forwarded to MCP.";
   const providerBlurb =
-    data.LLM_PROVIDER === "claude"
-      ? "Anthropic Claude via @ai-sdk/anthropic."
-      : "Google Gemini via @ai-sdk/google.";
+    data.LLM_PROVIDER === "claude" ? "Claude via @ai-sdk/anthropic." : "Gemini via @ai-sdk/google.";
   const resolvedModel = data.LLM_MODEL || getDefaultModelId(data.LLM_PROVIDER);
   const modelSuffix = data.LLM_MODEL ? "(override)" : "(default)";
 

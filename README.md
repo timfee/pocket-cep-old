@@ -187,17 +187,24 @@ Pocket CEP needs the Chrome Enterprise Premium MCP server running in HTTP mode o
 npm run dev:full
 ```
 
-`dev:full` is a tsx wrapper (`scripts/dev-full.ts`) that loads `.env`/`.env.local`, then runs `concurrently` with two streams prefixed `[app]` and `[mcp]`:
+`dev:full` is a tsx wrapper (`scripts/dev-full.ts`) that loads `.env`/`.env.local`, then runs `concurrently` with two streams prefixed `[app]` and `[mcp]`. The first stream is `next dev`. The second is the MCP server, started with three env vars and a stdin keep-alive trick:
 
-- `next dev`
-- `tail -f /dev/null | GCP_STDIO=false PORT=4000 LOG_LEVEL=warn $MCP_SERVER_CMD` (defaulting to `npx --prefer-online @google/chrome-enterprise-premium-mcp` when the env var is unset — no version specifier, so npx resolves the registry's current `latest` each run). The leading `tail -f /dev/null |` keeps the MCP child's stdin open — the upstream server treats stdin EOF as a shutdown signal even in HTTP mode.
+```
+tail -f /dev/null | GCP_STDIO=false PORT=4000 LOG_LEVEL=warn $MCP_SERVER_CMD
+```
 
-`MCP_SERVER_CMD` can live in `.env.local` (preferred — persists across sessions) or be exported in your shell. Examples:
+Each piece serves a specific purpose:
+
+- **`GCP_STDIO=false`** — required. The upstream `@google/chrome-enterprise-premium-mcp` server defaults to **stdio mode** (the MCP protocol over stdin/stdout, intended for hosts like Claude Desktop). Pocket CEP talks to it over HTTP, so we flip it to HTTP mode by setting `GCP_STDIO=false`. Forgetting this leaves the server reading JSON-RPC frames from stdin and ignoring the port.
+- **`PORT=4000`** — the port the upstream binds when running in HTTP mode. Matches `MCP_SERVER_URL`'s default of `http://localhost:4000/mcp`.
+- **`LOG_LEVEL=warn`** — quiets the upstream server's info logs so they don't drown out Next's logs in the same terminal. The MCP server still emits warnings and errors at this level.
+- **`tail -f /dev/null |`** — pipes a never-closing stream into the MCP child's stdin. Without this, the child sees stdin EOF immediately and exits — the upstream server treats stdin EOF as a shutdown signal even in HTTP mode.
+- **`$MCP_SERVER_CMD`** — the start command. Defaults to `npx --prefer-online @google/chrome-enterprise-premium-mcp` (no version specifier, so npx resolves the registry's current `latest` each run). Override it by setting `MCP_SERVER_CMD` in `.env.local` (preferred — persists across sessions) or in your shell:
 
 ```
 # .env.local (no quoting; values are read literally)
 MCP_SERVER_CMD=npx @google/chrome-enterprise-premium-mcp@0.4.0
-# or:
+# or, to run a local checkout:
 MCP_SERVER_CMD=node ../cmcp/mcp-server.js
 ```
 
@@ -409,31 +416,40 @@ Covers: landing page rendering, chat transport wiring (selected user propagates 
 
 ## Environment Diagnostics
 
-Run `npm run doctor` before starting the app to catch configuration issues early. Output is grouped into four sections so a failure is easy to locate:
+Run `npm run doctor` before starting the app to catch configuration issues early. Output is rendered with `@clack/prompts` (same idiom as `npm run setup`) — an active-flavor box up top, then four phases, each marked by a step glyph:
 
 ```
-[Static] files + env schema
-  ✓ .env file found
-  ✓ .env.local file found (secrets)
-  ✓ Env schema parsed
-  ✓ BETTER_AUTH_SECRET is set to a real value
-
-[Google credentials] ADC — service_account mode
-  ✓ ADC token issued
-
-[LLM provider] claude via Vercel AI SDK
-  ✓ Anthropic key accepted
-
-[MCP server] JSON-RPC 2.0 over HTTP @ http://localhost:4000/mcp
-  MCP server not running. Starting `npx --prefer-online @google/chrome-enterprise-premium-mcp` temporarily…........... ready.
-  ✓ MCP server reachable
-  ✓ MCP tools/list returned 23 tools
-  ✓ MCP prompts/list returned 3 prompts
-
-Summary: 10/10 checks passed. All good — start the app with `npm run dev:full`.
+┌  Pocket CEP — Environment Check
+│
+◇  Active flavor ────────────────────────╮
+│  AUTH_MODE     service_account         │
+│                Shared identity, ...    │
+│  LLM_PROVIDER  claude                  │
+│                Claude via @ai-sdk/...  │
+│  LLM_MODEL     claude-sonnet-4-6 (default)
+├────────────────────────────────────────╯
+│
+◇  Static — files + env schema
+│  ✓ .env file found
+│  ✓ .env.local file found
+│  ✓ Environment variables valid (Zod schema passed)
+│  ✓ BETTER_AUTH_SECRET is set to a real value
+│
+◇  Google credentials — ADC, service_account mode
+│  ✓ Google ADC token acquired
+│
+◇  LLM provider — claude via Vercel AI SDK
+│  ✓ Anthropic key accepted
+│
+◇  MCP server — JSON-RPC 2.0 over HTTP @ http://localhost:4000/mcp
+│  ✓ MCP server reachable
+│  ✓ MCP tools/list returned 23 tools
+│  ✓ MCP prompts/list returned 3 prompts
+│
+└  10/10 checks passed — start the app with `npm run dev:full`.
 ```
 
-When `MCP_SERVER_URL` is the managed default and the initial probe fails, doctor auto-spawns the npx package, polls until reachable (60s budget), and kills the child on exit. Pointing `MCP_SERVER_URL` at a custom server skips the auto-spawn — doctor just probes and reports.
+When `MCP_SERVER_URL` is the managed default and the probe fails, doctor auto-spawns the npx package with a real spinner, polls for up to 30 seconds, and kills the child on exit. After 10 seconds the spinner switches to a "still trying — set `MCP_SERVER_CMD` in `.env.local` to skip" hint so a slow registry doesn't leave you wondering. Pointing `MCP_SERVER_URL` at a custom server skips the auto-spawn entirely — doctor just probes and reports.
 
 ## When your Google session expires
 
