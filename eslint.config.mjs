@@ -43,6 +43,15 @@ const eslintConfig = defineConfig([
 
       "react/jsx-key": "error",
       "jsx-a11y/alt-text": "error",
+
+      // eslint-plugin-react-hooks 7.x's React-Compiler-aware
+      // `react-hooks/refs` rule false-positives the canonical
+      // stable-callback-via-ref pattern (e.g. a `useCallback` with
+      // `[]` deps that reads a ref at call-time so a memoized
+      // consumer sees fresh values without re-creating). Disabled
+      // until the rule learns to look through the deferred-call
+      // boundary; the pattern is intentional and documented at use.
+      "react-hooks/refs": "off",
     },
   },
 
