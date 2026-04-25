@@ -51,7 +51,11 @@ function loadEnvFiles(): void {
 
 loadEnvFiles();
 
-const mcpCmd = process.env.MCP_SERVER_CMD?.trim() || `npx ${MCP_NPX_PACKAGE}`;
+// `--prefer-online` makes npx revalidate against the registry on
+// every run rather than reusing whatever version sits in its cache.
+// Combined with the unpinned package name, each `dev:full` picks up
+// the registry's current `latest` automatically.
+const mcpCmd = process.env.MCP_SERVER_CMD?.trim() || `npx --prefer-online ${MCP_NPX_PACKAGE}`;
 
 const concurrentlyArgs = [
   "concurrently",

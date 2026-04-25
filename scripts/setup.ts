@@ -679,7 +679,7 @@ async function chooseMcpUrl(current: string | undefined): Promise<string> {
       "talks to it over HTTP.\n\n" +
       "Most contributors use the official npm package, which\n" +
       "`npm run dev:full` launches alongside Next on port 4000:\n\n" +
-      "  npx @google/chrome-enterprise-premium-mcp@latest\n\n" +
+      "  npx --prefer-online @google/chrome-enterprise-premium-mcp\n\n" +
       "If `npx` doesn't work on your network, or you've cloned the\n" +
       "MCP source locally, set MCP_SERVER_CMD in .env.local — both\n" +
       "`npm run dev:full` and `npm run doctor` honour it:\n\n" +

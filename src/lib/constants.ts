@@ -56,11 +56,17 @@ export const MAX_AGENT_ITERATIONS = 10;
 export const DEFAULT_MCP_URL = "http://localhost:4000/mcp";
 
 /**
- * The npx invocation `npm run dev:full` uses to launch the upstream
+ * The npx package name `npm run dev:full` uses to launch the upstream
  * MCP server. The doctor reuses this when auto-starting the server
  * for a managed-flow probe so a single source of truth exists.
+ *
+ * No version specifier — npx resolves to the registry's `latest`
+ * dist-tag on each invocation. Combined with the `--prefer-online`
+ * flag the spawn sites pass, that means each run picks up the
+ * registry's current `latest` even if a stale version sits in the
+ * local npx cache.
  */
-export const MCP_NPX_PACKAGE = "@google/chrome-enterprise-premium-mcp@latest";
+export const MCP_NPX_PACKAGE = "@google/chrome-enterprise-premium-mcp";
 
 /**
  * Builds the system prompt injected into every LLM conversation. The

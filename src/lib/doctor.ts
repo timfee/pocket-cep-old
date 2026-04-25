@@ -105,7 +105,7 @@ async function tryStartManagedMcpServer(
   // override, or any other working command can keep using it without
   // editing the doctor.
   const cmdOverride = process.env.MCP_SERVER_CMD?.trim();
-  const description = cmdOverride ?? `npx ${MCP_NPX_PACKAGE}`;
+  const description = cmdOverride ?? `npx --prefer-online ${MCP_NPX_PACKAGE}`;
   process.stdout.write(
     `\n  \x1b[2mMCP server not running. Starting \`${description}\` temporarily…\x1b[0m`,
   );
@@ -117,10 +117,17 @@ async function tryStartManagedMcpServer(
   // stdout/stderr are also piped + buffered so a child that exits
   // early can have its diagnostic surfaced — `ignore` would discard
   // exactly the message the user needs to see.
+  //
+  // `--prefer-online` makes npx revalidate against the registry every
+  // run, picking up new `latest` publications without needing to clear
+  // its cache.
   const env = { ...process.env, PORT: "4000", GCP_STDIO: "false", LOG_LEVEL: "error" };
   const child = cmdOverride
     ? spawn(cmdOverride, { env, stdio: ["pipe", "pipe", "pipe"], shell: true })
-    : spawn("npx", [MCP_NPX_PACKAGE], { env, stdio: ["pipe", "pipe", "pipe"] });
+    : spawn("npx", ["--prefer-online", MCP_NPX_PACKAGE], {
+        env,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
 
   // Bounded ring buffer — we want the tail of the child's output, not
   // its head, since meaningful errors usually surface last.

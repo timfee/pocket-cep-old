@@ -109,7 +109,7 @@ at the bottom). Uncomment only what you need to change.
 | `ANTHROPIC_API_KEY` | — | Required when `LLM_PROVIDER=claude`. |
 | `GOOGLE_AI_API_KEY` | — | Required when `LLM_PROVIDER=gemini`. |
 | `MCP_SERVER_URL` | `http://localhost:4000/mcp` | CEP MCP server HTTP endpoint. |
-| `MCP_SERVER_CMD` | *(unset)* | Override the MCP server start command. Read by `npm run dev:full` and `npm run doctor` from `.env.local` or the shell. Default: `npx @google/chrome-enterprise-premium-mcp@latest`. Not parsed by the app at runtime. |
+| `MCP_SERVER_CMD` | *(unset)* | Override the MCP server start command. Read by `npm run dev:full` and `npm run doctor` from `.env.local` or the shell. Default: `npx --prefer-online @google/chrome-enterprise-premium-mcp` (npx resolves `latest` on each run; `--prefer-online` skips the cache so a new release is picked up the next time you start dev). Not parsed by the app at runtime. |
 
 All app-side variables are validated at startup with Zod — missing or malformed values surface as a startup error pointing you to the fix.
 
@@ -190,7 +190,7 @@ npm run dev:full
 `dev:full` is a tsx wrapper (`scripts/dev-full.ts`) that loads `.env`/`.env.local`, then runs `concurrently` with two streams prefixed `[app]` and `[mcp]`:
 
 - `next dev`
-- `tail -f /dev/null | GCP_STDIO=false PORT=4000 LOG_LEVEL=warn $MCP_SERVER_CMD` (defaulting to `npx @google/chrome-enterprise-premium-mcp@latest` when the env var is unset). The leading `tail -f /dev/null |` keeps the MCP child's stdin open — the upstream server treats stdin EOF as a shutdown signal even in HTTP mode.
+- `tail -f /dev/null | GCP_STDIO=false PORT=4000 LOG_LEVEL=warn $MCP_SERVER_CMD` (defaulting to `npx --prefer-online @google/chrome-enterprise-premium-mcp` when the env var is unset — no version specifier, so npx resolves the registry's current `latest` each run). The leading `tail -f /dev/null |` keeps the MCP child's stdin open — the upstream server treats stdin EOF as a shutdown signal even in HTTP mode.
 
 `MCP_SERVER_CMD` can live in `.env.local` (preferred — persists across sessions) or be exported in your shell. Examples:
 
@@ -207,7 +207,7 @@ If you prefer to manage the MCP server yourself:
 
 ```bash
 # Terminal 1: MCP server
-GCP_STDIO=false PORT=4000 npx @google/chrome-enterprise-premium-mcp@latest
+GCP_STDIO=false PORT=4000 npx --prefer-online @google/chrome-enterprise-premium-mcp
 
 # Terminal 2: Pocket CEP
 npm run dev
@@ -425,7 +425,7 @@ Run `npm run doctor` before starting the app to catch configuration issues early
   ✓ Anthropic key accepted
 
 [MCP server] JSON-RPC 2.0 over HTTP @ http://localhost:4000/mcp
-  MCP server not running. Starting `@google/chrome-enterprise-premium-mcp@latest` temporarily…........... ready.
+  MCP server not running. Starting `npx --prefer-online @google/chrome-enterprise-premium-mcp` temporarily…........... ready.
   ✓ MCP server reachable
   ✓ MCP tools/list returned 23 tools
   ✓ MCP prompts/list returned 3 prompts
