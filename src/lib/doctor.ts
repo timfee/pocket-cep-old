@@ -8,15 +8,19 @@
  * × claude|gemini), what that means in practice, and which runtime
  * probes matter for the active flavor.
  *
- * Output is grouped into sections so a failure is easy to locate:
+ * Output is grouped into phases so a failure is easy to locate:
  *   - Static (files + schema + placeholder secrets)
  *   - Google credentials (ADC — service_account only)
  *   - LLM provider (Anthropic or Google AI key)
  *   - MCP server (reachable + tool/prompt inventory)
  *
+ * Renders with `@clack/prompts` for visual consistency with the
+ * setup CLI — same connected-bar idiom, same step markers, same
+ * spinner during the auto-start of the managed MCP server.
+ *
  * Independent probes fan out in parallel so the whole run is bounded
  * by the single slowest external call. Library log lines tagged with
- * LOG_TAGS are muted while probes run so they don't interleave with
+ * `LOG_TAGS` are muted while probes run so they don't interleave with
  * the doctor's own output.
  *
  * Exit code 0 = all checks passed, 1 = at least one failed.
@@ -25,16 +29,13 @@
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { spawn, type ChildProcess } from "node:child_process";
+import * as p from "@clack/prompts";
 import { serverSchema, type ServerEnv } from "./env";
 import { getErrorMessage } from "./errors";
 import { isAuthError } from "./auth-errors";
 import { DEFAULT_MCP_URL, LOG_TAGS, MCP_NPX_PACKAGE } from "./constants";
 import { getDefaultModelId } from "./models";
 import {
-  PASS,
-  FAIL,
-  WARN,
-  SKIP,
   probeMcpServer,
   probeAnthropicKey,
   probeGeminiKey,
@@ -42,19 +43,138 @@ import {
   type CheckResult,
 } from "./doctor-checks";
 
+/**
+ * Structured check result the doctor emits to clack. `pass`/`fail`/`skip`
+ * map to `p.log.success` / `p.log.error` / `p.log.info`; warnings get
+ * `p.log.warn`. `details` are printed as continuation lines under the
+ * title.
+ */
 type Status = "pass" | "fail" | "warn" | "skip";
 
 type CheckLine = {
   status: Status;
   title: string;
-  /** Extra lines printed under the title, indented — used for fix/why. */
   details?: string[];
 };
 
 /**
- * Minimal .env parser — handles `KEY=VALUE`, blank lines, and `#` comments.
- * No quoting, no multiline, no variable expansion. We keep it trivial so
- * doctor's diagnostics aren't confounded by parser quirks.
+ * Distinguishes the auto-start failure modes so the doctor's output
+ * can name what actually went wrong: spawn never started (e.g. npx
+ * missing), child started then exited (most often the upstream MCP's
+ * stdin-EOF shutdown), or the polling budget elapsed while the child
+ * kept running (typical when a slow registry hangs `npx`).
+ */
+type AutoStartFailure =
+  | { kind: "spawn_error"; error: Error }
+  | { kind: "child_exited"; code: number | null; output: string }
+  | { kind: "timeout"; output: string };
+
+/**
+ * 30s is enough for a fast registry round-trip + first-time install;
+ * longer than that on `npx --prefer-online` usually means a slow or
+ * blocking corporate proxy, which is better surfaced to the user as a
+ * timeout-with-suggestion than a 60s wait.
+ */
+const AUTO_START_TIMEOUT_MS = 30_000;
+const AUTO_START_HINT_AFTER_MS = 10_000;
+
+/**
+ * Starts the upstream MCP server temporarily and waits for it to
+ * become reachable. Honours `MCP_SERVER_CMD` so contributors with a
+ * working alternative (local cmcp checkout, registry override, etc.)
+ * can avoid the npx path. Used by the MCP probe when the URL is the
+ * managed default and the user almost certainly hasn't started the
+ * server themselves.
+ *
+ * Returns the live probe result + the child handle on success, or a
+ * structured {@link AutoStartFailure} so the failure path can pick
+ * an accurate fix hint.
+ */
+async function tryStartManagedMcpServer(
+  url: string,
+): Promise<
+  { ok: true; child: ChildProcess; result: CheckResult } | { ok: false; failure: AutoStartFailure }
+> {
+  const cmdOverride = process.env.MCP_SERVER_CMD?.trim();
+  const description = cmdOverride ?? `npx --prefer-online ${MCP_NPX_PACKAGE}`;
+
+  const spinner = p.spinner();
+  spinner.start(`Starting \`${description}\` temporarily…`);
+
+  // `stdio: ["pipe", "pipe", "pipe"]` — keep an open writable pipe on
+  // the child's stdin (the upstream MCP server treats stdin EOF as a
+  // shutdown signal even in HTTP mode) and capture stdout/stderr so
+  // we can surface the upstream error if the child exits early.
+  const env = { ...process.env, PORT: "4000", GCP_STDIO: "false", LOG_LEVEL: "error" };
+  const child = cmdOverride
+    ? spawn(cmdOverride, { env, stdio: ["pipe", "pipe", "pipe"], shell: true })
+    : spawn("npx", ["--prefer-online", MCP_NPX_PACKAGE], {
+        env,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+  const MAX_BUFFER = 4096;
+  let captured = "";
+  const append = (chunk: Buffer | string) => {
+    captured += typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+    if (captured.length > MAX_BUFFER) captured = captured.slice(-MAX_BUFFER);
+  };
+  child.stdout?.on("data", append);
+  child.stderr?.on("data", append);
+
+  let spawnError: Error | null = null;
+  child.once("error", (err) => {
+    spawnError = err instanceof Error ? err : new Error(String(err));
+  });
+
+  const startedAt = Date.now();
+  const deadline = startedAt + AUTO_START_TIMEOUT_MS;
+  let hintShown = false;
+  let firstIteration = true;
+
+  while (Date.now() < deadline) {
+    if (spawnError !== null) {
+      spinner.stop("npx couldn't start");
+      if (!child.killed) child.kill("SIGTERM");
+      return { ok: false, failure: { kind: "spawn_error", error: spawnError } };
+    }
+    if (child.exitCode !== null) {
+      spinner.stop(`MCP child exited early (code ${child.exitCode ?? "null"})`);
+      return {
+        ok: false,
+        failure: { kind: "child_exited", code: child.exitCode, output: captured.trim() },
+      };
+    }
+
+    if (!hintShown && Date.now() - startedAt > AUTO_START_HINT_AFTER_MS) {
+      spinner.message(
+        `Still trying \`${description}\` — set \`MCP_SERVER_CMD\` in .env.local if your registry is slow`,
+      );
+      hintShown = true;
+    }
+
+    if (!firstIteration) {
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    firstIteration = false;
+
+    const probe = await probeMcpServer(url);
+    if (probe.ok) {
+      spinner.stop(`MCP server reachable (started by doctor)`);
+      return { ok: true, child, result: probe };
+    }
+  }
+
+  spinner.stop(`Auto-start timed out after ${AUTO_START_TIMEOUT_MS / 1000}s`);
+  if (!child.killed) child.kill("SIGTERM");
+  return { ok: false, failure: { kind: "timeout", output: captured.trim() } };
+}
+
+/**
+ * Minimal .env parser — handles `KEY=VALUE`, blank lines, and `#`
+ * comments. No quoting, no multiline, no variable expansion. We keep
+ * it trivial so doctor's diagnostics aren't confounded by parser
+ * quirks.
  */
 function parseEnvFile(filePath: string): Record<string, string> {
   const content = readFileSync(filePath, "utf-8");
@@ -70,137 +190,25 @@ function parseEnvFile(filePath: string): Record<string, string> {
 }
 
 /**
- * Distinguishes the auto-start failure modes so the doctor's output
- * can name what actually went wrong: spawn never started (e.g. npx
- * missing), child started then exited (most often the upstream MCP's
- * stdin-EOF shutdown), or the polling budget elapsed while the child
- * kept running.
- */
-type AutoStartFailure =
-  | { kind: "spawn_error"; error: Error }
-  | { kind: "child_exited"; code: number | null; output: string }
-  | { kind: "timeout"; output: string };
-
-/**
- * Starts the upstream MCP server temporarily — same invocation
- * `npm run dev:full` uses — and waits for it to become reachable.
- * Honours `MCP_SERVER_CMD` so contributors with a working alternative
- * (local cmcp checkout, a registry override, etc.) can avoid the
- * default npx path. Used by the MCP probe when the URL is the
- * managed default and the user almost certainly hasn't started the
- * server themselves.
- *
- * Returns the live probe result + the child handle (so the caller
- * can run tools/prompts checks then kill the child) on success, or a
- * structured {@link AutoStartFailure} so the failure path can pick
- * an accurate fix hint.
- */
-async function tryStartManagedMcpServer(
-  url: string,
-): Promise<
-  { ok: true; child: ChildProcess; result: CheckResult } | { ok: false; failure: AutoStartFailure }
-> {
-  // `MCP_SERVER_CMD` overrides the default. Same convention as
-  // `dev:full`: contributors with a local cmcp checkout, a registry
-  // override, or any other working command can keep using it without
-  // editing the doctor.
-  const cmdOverride = process.env.MCP_SERVER_CMD?.trim();
-  const description = cmdOverride ?? `npx --prefer-online ${MCP_NPX_PACKAGE}`;
-  process.stdout.write(
-    `\n  \x1b[2mMCP server not running. Starting \`${description}\` temporarily…\x1b[0m`,
-  );
-
-  // `stdio: ["pipe", "pipe", "pipe"]` — keep an open writable pipe on
-  // the child's stdin (the upstream MCP server treats stdin EOF as a
-  // shutdown signal even in HTTP mode; `dev:full` works around this
-  // with `tail -f /dev/null |`, this is the Node-native equivalent).
-  // stdout/stderr are also piped + buffered so a child that exits
-  // early can have its diagnostic surfaced — `ignore` would discard
-  // exactly the message the user needs to see.
-  //
-  // `--prefer-online` makes npx revalidate against the registry every
-  // run, picking up new `latest` publications without needing to clear
-  // its cache.
-  const env = { ...process.env, PORT: "4000", GCP_STDIO: "false", LOG_LEVEL: "error" };
-  const child = cmdOverride
-    ? spawn(cmdOverride, { env, stdio: ["pipe", "pipe", "pipe"], shell: true })
-    : spawn("npx", ["--prefer-online", MCP_NPX_PACKAGE], {
-        env,
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-
-  // Bounded ring buffer — we want the tail of the child's output, not
-  // its head, since meaningful errors usually surface last.
-  const MAX_BUFFER = 4096;
-  let captured = "";
-  const append = (chunk: Buffer | string) => {
-    captured += typeof chunk === "string" ? chunk : chunk.toString("utf-8");
-    if (captured.length > MAX_BUFFER) captured = captured.slice(-MAX_BUFFER);
-  };
-  child.stdout?.on("data", append);
-  child.stderr?.on("data", append);
-
-  let spawnError: Error | null = null;
-  child.once("error", (err) => {
-    spawnError = err instanceof Error ? err : new Error(String(err));
-  });
-
-  const deadline = Date.now() + 60_000;
-  // Probe before sleeping so an instantly-ready server doesn't pay
-  // the 500ms tick. Only loops sleep.
-  let firstIteration = true;
-  while (Date.now() < deadline) {
-    if (spawnError !== null) {
-      process.stdout.write("\n");
-      if (!child.killed) child.kill("SIGTERM");
-      return { ok: false, failure: { kind: "spawn_error", error: spawnError } };
-    }
-    if (child.exitCode !== null) {
-      process.stdout.write("\n");
-      return {
-        ok: false,
-        failure: { kind: "child_exited", code: child.exitCode, output: captured.trim() },
-      };
-    }
-    if (!firstIteration) {
-      await new Promise((r) => setTimeout(r, 500));
-      process.stdout.write(".");
-    }
-    firstIteration = false;
-    const probe = await probeMcpServer(url);
-    if (probe.ok) {
-      process.stdout.write(" ready.\n");
-      return { ok: true, child, result: probe };
-    }
-  }
-
-  process.stdout.write(" timed out.\n");
-  if (!child.killed) child.kill("SIGTERM");
-  return { ok: false, failure: { kind: "timeout", output: captured.trim() } };
-}
-
-/**
- * Loads env files the same way Next.js does: .env first, then .env.local
- * overrides. Starts from process.env so any shell-exported vars are
- * included too.
+ * Loads env files the same way Next.js does: .env first, then
+ * .env.local overrides. Starts from process.env so any
+ * shell-exported vars are included too.
  */
 function loadEnvFiles(): Record<string, string> {
   const env: Record<string, string> = Object.fromEntries(
     Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
   );
-
   for (const filename of [".env", ".env.local"]) {
     const filepath = resolve(process.cwd(), filename);
     if (!existsSync(filepath)) continue;
     Object.assign(env, parseEnvFile(filepath));
   }
-
   return env;
 }
 
 /**
- * Silences the structured library logs (`[auth]`, `[mcp]`, `[users]`, …)
- * so they don't interleave with the doctor's grouped output. Anything
+ * Silences structured library logs (`[auth]`, `[mcp]`, `[users]`, …)
+ * so they don't interleave with the doctor's clack output. Anything
  * without a known prefix is still printed so a library crash remains
  * visible. Returns a restore function.
  */
@@ -234,24 +242,38 @@ function muteLibraryLogs(): () => void {
   };
 }
 
-const ICON: Record<Status, string> = {
-  pass: PASS,
-  fail: FAIL,
-  warn: WARN,
-  skip: SKIP,
-};
-
-function printSection(title: string, subtitle: string, lines: CheckLine[]) {
-  console.log(`\n${title}`);
-  console.log(`  \x1b[2m${subtitle}\x1b[0m`);
-  for (const line of lines) {
-    console.log(`    ${ICON[line.status]} ${line.title}`);
-    if (line.details) {
-      for (const detail of line.details) {
-        console.log(`         \x1b[2m${detail}\x1b[0m`);
-      }
-    }
+/**
+ * Renders a {@link CheckLine} via the right clack log helper. Details
+ * are appended as continuation text — clack's log methods accept
+ * multi-line strings and indent them under the title automatically.
+ */
+function printCheckLine(line: CheckLine) {
+  const body = line.details && line.details.length > 0 ? `\n${line.details.join("\n")}` : "";
+  const message = line.title + body;
+  switch (line.status) {
+    case "pass":
+      p.log.success(message);
+      return;
+    case "fail":
+      p.log.error(message);
+      return;
+    case "warn":
+      p.log.warn(message);
+      return;
+    case "skip":
+      p.log.info(message);
+      return;
   }
+}
+
+/**
+ * Prints a phase header + each check beneath it. Replaces the prior
+ * `printSection` (raw ANSI). Each phase is one `p.log.step` followed
+ * by N status lines.
+ */
+function printPhase(title: string, subtitle: string, lines: CheckLine[]) {
+  p.log.step(`${title} — ${subtitle}`);
+  for (const line of lines) printCheckLine(line);
 }
 
 /**
@@ -259,39 +281,34 @@ function printSection(title: string, subtitle: string, lines: CheckLine[]) {
  * engineers can see — just from doctor output — which of the four
  * mode × provider combinations the app will boot with.
  */
-function printActiveFlavor(data: ServerEnv) {
+function activeFlavorNote(data: ServerEnv): string {
   const authBlurb =
     data.AUTH_MODE === "service_account"
-      ? "Server-side ADC authenticates every Google API call. No user sign-in; the dashboard loads directly as a shared 'service account' identity. Best for local demos and shared dev sessions."
-      : "Users sign in with Google OAuth. Their access token is forwarded to the MCP server and carries their scopes. Best for per-user attribution and real admin setups.";
-
+      ? "Server-side ADC authenticates every Google API call. No user sign-in; the dashboard loads as a shared 'service account' identity."
+      : "Users sign in with Google OAuth. Their access token is forwarded to the MCP server.";
   const providerBlurb =
     data.LLM_PROVIDER === "claude"
-      ? "Uses Anthropic's Claude via @ai-sdk/anthropic."
-      : "Uses Google's Gemini via @ai-sdk/google.";
-
+      ? "Anthropic Claude via @ai-sdk/anthropic."
+      : "Google Gemini via @ai-sdk/google.";
   const resolvedModel = data.LLM_MODEL || getDefaultModelId(data.LLM_PROVIDER);
   const modelSuffix = data.LLM_MODEL ? "(override)" : "(default)";
 
-  console.log("\nActive flavor");
-  console.log(`  AUTH_MODE    \x1b[36m${data.AUTH_MODE}\x1b[0m`);
-  console.log(`    \x1b[2m${authBlurb}\x1b[0m`);
-  console.log(`  LLM_PROVIDER \x1b[36m${data.LLM_PROVIDER}\x1b[0m`);
-  console.log(`    \x1b[2m${providerBlurb}\x1b[0m`);
-  console.log(`  LLM_MODEL    \x1b[36m${resolvedModel}\x1b[0m \x1b[2m${modelSuffix}\x1b[0m`);
+  return (
+    `AUTH_MODE     ${data.AUTH_MODE}\n` +
+    `              ${authBlurb}\n` +
+    `LLM_PROVIDER  ${data.LLM_PROVIDER}\n` +
+    `              ${providerBlurb}\n` +
+    `LLM_MODEL     ${resolvedModel} ${modelSuffix}`
+  );
 }
 
 /**
- * Turns a CheckResult into the display shape. Failures get a three-line
- * "error / fix / why" detail block; successes show the shortest useful
- * fact about what was actually exercised.
+ * Turns a CheckResult into the display shape. Failures get a "fix"
+ * detail and a "why" detail; successes show the shortest useful fact
+ * about what was actually exercised.
  */
 function staticCheck(ok: boolean, title: string, detail?: string): CheckLine {
-  return {
-    status: ok ? "pass" : "fail",
-    title,
-    details: detail ? [detail] : undefined,
-  };
+  return { status: ok ? "pass" : "fail", title, details: detail ? [detail] : undefined };
 }
 
 function probeLine(result: CheckResult, why: string, fixHint?: string): CheckLine {
@@ -306,12 +323,49 @@ function probeLine(result: CheckResult, why: string, fixHint?: string): CheckLin
 }
 
 /**
+ * Maps an auto-start failure to a user-facing fix hint that names
+ * what actually went wrong, so "auto-start failed" doesn't always
+ * mean "we waited and gave up" when the real problem was the child
+ * exiting in the first second.
+ */
+function autoStartFailureFix(failure: AutoStartFailure): string {
+  switch (failure.kind) {
+    case "spawn_error":
+      return `Doctor couldn't run \`npx\` (${failure.error.message}). Run \`npm run dev:full\` manually.`;
+    case "child_exited":
+      return `Doctor's \`npx\` child exited early (code ${failure.code ?? "null"}). Run \`npm run dev:full\` manually to see the upstream error.`;
+    case "timeout":
+      return `Auto-start didn't become reachable in ${AUTO_START_TIMEOUT_MS / 1000}s. Set \`MCP_SERVER_CMD\` in .env.local to a working command (e.g. a local checkout) or run \`npm run dev:full\` manually.`;
+  }
+}
+
+function describeMcpFailure(method: string, reason: unknown): CheckLine {
+  const message = isAuthError(reason) ? reason.displayMessage : getErrorMessage(reason);
+  return {
+    status: "fail",
+    title: `MCP ${method} failed — ${message}`,
+    details:
+      isAuthError(reason) && reason.command
+        ? [`Fix: ${reason.command}`, `Why: ${reason.remedy}`]
+        : [`Why: the MCP server replied to ${method} with an error.`],
+  };
+}
+
+function countPasses(lines: CheckLine[]) {
+  return lines.filter((l) => l.status === "pass").length;
+}
+
+function countFailures(lines: CheckLine[]) {
+  return lines.filter((l) => l.status === "fail").length;
+}
+
+/**
  * Main diagnostic flow. Probes fan out in parallel; their results are
- * collected into section buffers and printed together at the end so
+ * collected into phase buffers and printed via clack at the end so
  * the output stays readable even under interleaved async.
  */
 async function main() {
-  console.log("\nPocket CEP Environment Check");
+  p.intro("Pocket CEP — Environment Check");
 
   const envPath = resolve(process.cwd(), ".env");
   const envLocalPath = resolve(process.cwd(), ".env.local");
@@ -324,15 +378,16 @@ async function main() {
       ".env.local file found",
       envLocalPresent
         ? ".env.local holds your secrets. Not committed (gitignored)."
-        : "Run: cp .env.local.example .env.local  — then add your BETTER_AUTH_SECRET and LLM key.",
+        : "Run: cp .env.local.example .env.local — then add your BETTER_AUTH_SECRET and LLM key.",
     ),
   ];
 
   const env = loadEnvFiles();
-  // Inject loaded values into process.env so downstream code (the MCP
-  // auto-spawn, library calls, anything reading process.env directly)
-  // sees `.env.local` settings the same way Next.js does at runtime.
-  // Shell-exported vars take precedence — we only fill the gaps.
+  // Inject loaded values into process.env so downstream code (the
+  // MCP auto-spawn, library calls, anything reading process.env
+  // directly) sees `.env.local` settings the same way Next.js does
+  // at runtime. Shell-exported vars take precedence — we only fill
+  // the gaps.
   for (const [key, value] of Object.entries(env)) {
     if (process.env[key] === undefined) process.env[key] = value;
   }
@@ -344,7 +399,7 @@ async function main() {
       title: "Environment variables failed validation",
       details: parseResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
     });
-    printSection("Static", "files + env schema", staticLines);
+    printPhase("Static", "files + env schema", staticLines);
     finishWithSummary(countFailures(staticLines), countPasses(staticLines));
     return;
   }
@@ -365,7 +420,7 @@ async function main() {
     ),
   );
 
-  printActiveFlavor(data);
+  p.note(activeFlavorNote(data), "Active flavor");
 
   let restoreConsole = muteLibraryLogs();
 
@@ -404,10 +459,11 @@ async function main() {
     }
     restoreConsole = muteLibraryLogs();
   }
+
   // Cover three exit paths so the temporary MCP child never orphans:
   //   - SIGINT (Ctrl-C) — user-initiated cancel
-  //   - uncaughtException — main() throws before the explicit kill
   //   - SIGTERM — supervisor signals us to stop
+  //   - uncaughtException — main() throws before the explicit kill
   // The happy path still calls kill explicitly before finishWithSummary.
   const cleanupChild = () => {
     if (mcpChild && !mcpChild.killed) mcpChild.kill("SIGTERM");
@@ -422,7 +478,7 @@ async function main() {
   });
   process.once("uncaughtException", (err) => {
     cleanupChild();
-    console.error("Doctor crashed:", err);
+    p.log.error(`Doctor crashed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   });
 
@@ -432,7 +488,7 @@ async function main() {
       probeLine(
         adcResult,
         "Why: in service_account mode, the app uses your ADC token to call the Admin SDK and Admin Reports API.",
-        "Fix: gcloud auth application-default login  (and set a quota project)",
+        "Fix: gcloud auth application-default login (and set a quota project)",
       ),
     );
   } else {
@@ -465,6 +521,7 @@ async function main() {
     ? autoStartFailureFix(autoStartFailure)
     : "Fix: npm run dev:full   (or start the MCP server separately on PORT=4000)";
   const mcpLine = probeLine(mcpResult, mcpWhy, mcpFix);
+
   // When the auto-start child captured stderr/stdout before exiting,
   // surface its tail under the fix hint so the user sees the actual
   // upstream error rather than just doctor's reaction to it.
@@ -524,14 +581,14 @@ async function main() {
 
   restoreConsole();
 
-  printSection("Static", "files + env schema", staticLines);
-  printSection(
+  printPhase("Static", "files + env schema", staticLines);
+  printPhase(
     "Google credentials",
     needsAdc ? "ADC — service_account mode" : "User OAuth — ADC not used",
     adcLines,
   );
-  printSection("LLM provider", `${data.LLM_PROVIDER} via Vercel AI SDK`, providerLines);
-  printSection("MCP server", `JSON-RPC 2.0 over HTTP @ ${data.MCP_SERVER_URL}`, mcpLines);
+  printPhase("LLM provider", `${data.LLM_PROVIDER} via Vercel AI SDK`, providerLines);
+  printPhase("MCP server", `JSON-RPC 2.0 over HTTP @ ${data.MCP_SERVER_URL}`, mcpLines);
 
   if (mcpChild && !mcpChild.killed) mcpChild.kill("SIGTERM");
 
@@ -539,55 +596,17 @@ async function main() {
   finishWithSummary(countFailures(allLines), countPasses(allLines));
 }
 
-/**
- * Maps an auto-start failure to a user-facing fix hint that names
- * what actually went wrong, so "auto-start failed" doesn't always
- * mean "we waited and gave up" when the real problem was the child
- * exiting in the first second.
- */
-function autoStartFailureFix(failure: AutoStartFailure): string {
-  switch (failure.kind) {
-    case "spawn_error":
-      return `Doctor couldn't run \`npx\` (${failure.error.message}). Install Node ≥ 22 or run \`npm run dev:full\` manually.`;
-    case "child_exited":
-      return `Doctor's \`npx\` child exited early (code ${failure.code ?? "null"}). Run \`npm run dev:full\` manually to see the upstream error.`;
-    case "timeout":
-      return "Doctor's `npx` auto-start didn't become reachable in 60s. Run `npm run dev:full` manually.";
-  }
-}
-
-function describeMcpFailure(method: string, reason: unknown): CheckLine {
-  const message = isAuthError(reason) ? reason.displayMessage : getErrorMessage(reason);
-  return {
-    status: "fail",
-    title: `MCP ${method} failed — ${message}`,
-    details:
-      isAuthError(reason) && reason.command
-        ? [`Fix: ${reason.command}`, `Why: ${reason.remedy}`]
-        : [`Why: the MCP server replied to ${method} with an error.`],
-  };
-}
-
-function countPasses(lines: CheckLine[]) {
-  return lines.filter((l) => l.status === "pass").length;
-}
-
-function countFailures(lines: CheckLine[]) {
-  return lines.filter((l) => l.status === "fail").length;
-}
-
 function finishWithSummary(failures: number, passes: number) {
   const total = failures + passes;
-  const verdict =
-    failures > 0
-      ? "Fix the ✗ lines above before running the app."
-      : "All good — start the app with `npm run dev:full`.";
-  const colour = failures > 0 ? "\x1b[31m" : "\x1b[32m";
-  console.log(`\n${colour}Summary: ${passes}/${total} checks passed.\x1b[0m ${verdict}\n`);
-  process.exit(failures > 0 ? 1 : 0);
+  if (failures > 0) {
+    p.outro(`${passes}/${total} checks passed — fix the ✗ lines above before running the app.`);
+    process.exit(1);
+  }
+  p.outro(`${passes}/${total} checks passed — start the app with \`npm run dev:full\`.`);
+  process.exit(0);
 }
 
 main().catch((error) => {
-  console.error("Doctor script crashed:", error);
+  p.log.error(`Doctor script crashed: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });
