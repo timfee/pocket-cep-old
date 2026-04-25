@@ -33,7 +33,13 @@ import * as p from "@clack/prompts";
 import { serverSchema, type ServerEnv } from "./env";
 import { getErrorMessage } from "./errors";
 import { isAuthError } from "./auth-errors";
-import { DEFAULT_MCP_URL, LOG_TAGS, MCP_NPX_PACKAGE } from "./constants";
+import {
+  DEFAULT_MCP_URL,
+  LOG_TAGS,
+  MCP_NPX_ARGS,
+  MCP_NPX_COMMAND,
+  MCP_NPX_PACKAGE,
+} from "./constants";
 import { getDefaultModelId } from "./models";
 import {
   probeMcpServer,
@@ -79,6 +85,29 @@ const AUTO_START_TIMEOUT_MS = 30_000;
 const AUTO_START_HINT_AFTER_MS = 10_000;
 
 /**
+ * Strips CSI/SGR ANSI sequences (colours, cursor moves) from npm/npx
+ * output before measuring or displaying it. Top-level so the regex
+ * isn't recompiled on every chunk.
+ */
+const ANSI_ESCAPE_RE = /\u001b\[[0-9;]*[A-Za-z]/g;
+
+/**
+ * Formats one captured line of npx output for display under the
+ * doctor spinner. Truncates to the current terminal width so clack's
+ * in-place redraw doesn't wrap (a wrapped spinner line redraws on a
+ * fresh row each tick instead of overwriting itself).
+ */
+function formatActivityLine(line: string): string {
+  const cols = process.stdout.columns ?? 80;
+  // Reserve a few columns for the clack glyph, padding, and the
+  // `npx: ` prefix below.
+  const prefix = "npx: ";
+  const room = Math.max(20, cols - prefix.length - 8);
+  const trimmed = line.length > room ? line.slice(0, Math.max(0, room - 1)) + "…" : line;
+  return prefix + trimmed;
+}
+
+/**
  * Starts the upstream MCP server temporarily and waits for it to
  * become reachable. Honours `MCP_SERVER_CMD` so contributors with a
  * working alternative (local cmcp checkout, registry override, etc.)
@@ -96,7 +125,7 @@ async function tryStartManagedMcpServer(
   { ok: true; child: ChildProcess; result: CheckResult } | { ok: false; failure: AutoStartFailure }
 > {
   const cmdOverride = process.env.MCP_SERVER_CMD?.trim();
-  const description = cmdOverride ?? `npx --prefer-online ${MCP_NPX_PACKAGE}`;
+  const description = cmdOverride ?? MCP_NPX_COMMAND;
 
   // Long message printed once before the spinner — clack's spinner
   // redraws in place, and a message that overflows the terminal width
@@ -111,20 +140,31 @@ async function tryStartManagedMcpServer(
   // `stdio: ["pipe", "pipe", "pipe"]` — keep an open writable pipe on
   // the child's stdin (the upstream MCP server treats stdin EOF as a
   // shutdown signal even in HTTP mode) and capture stdout/stderr so
-  // we can surface the upstream error if the child exits early.
+  // doctor can show the upstream error if the child exits early.
   const env = { ...process.env, PORT: "4000", GCP_STDIO: "false", LOG_LEVEL: "error" };
   const child = cmdOverride
     ? spawn(cmdOverride, { env, stdio: ["pipe", "pipe", "pipe"], shell: true })
-    : spawn("npx", ["--prefer-online", MCP_NPX_PACKAGE], {
+    : spawn("npx", [...MCP_NPX_ARGS, MCP_NPX_PACKAGE], {
         env,
         stdio: ["pipe", "pipe", "pipe"],
       });
 
   const MAX_BUFFER = 4096;
   let captured = "";
+  let latestLine = "";
   const append = (chunk: Buffer | string) => {
-    captured += typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+    const text = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+    captured += text;
     if (captured.length > MAX_BUFFER) captured = captured.slice(-MAX_BUFFER);
+
+    // Track the most recent non-blank line so the polling loop can
+    // mirror it under the spinner. ANSI colour codes are stripped so
+    // the truncation math stays in display-character units.
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.replace(ANSI_ESCAPE_RE, "").trim())
+      .filter(Boolean);
+    if (lines.length > 0) latestLine = lines[lines.length - 1];
   };
   child.stdout?.on("data", append);
   child.stderr?.on("data", append);
@@ -153,7 +193,13 @@ async function tryStartManagedMcpServer(
       };
     }
 
-    if (!hintShown && Date.now() - startedAt > AUTO_START_HINT_AFTER_MS) {
+    // Prefer mirroring whatever npx just printed — a moving line is
+    // far more reassuring than a static "Probing…" while a slow
+    // registry churns. Fall back to the override hint only when
+    // there's been no output at all by the threshold.
+    if (latestLine) {
+      spinner.message(formatActivityLine(latestLine));
+    } else if (!hintShown && Date.now() - startedAt > AUTO_START_HINT_AFTER_MS) {
       // Short message — clack's spinner redraws in place and long
       // messages that wrap break the redraw. The discoverable
       // override hint was already printed above the spinner.
@@ -532,7 +578,7 @@ async function main() {
   const mcpLine = probeLine(mcpResult, mcpWhy, mcpFix);
 
   // When the auto-start child captured stderr/stdout before exiting,
-  // surface its tail under the fix hint so the user sees the actual
+  // print its tail under the fix hint so the user sees the actual
   // upstream error rather than just doctor's reaction to it.
   if (
     mcpLine.status === "fail" &&

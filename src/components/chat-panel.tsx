@@ -201,7 +201,7 @@ export function ChatPanel({ selectedUser, onToolInvocation, onClearSelectedUser 
         setInput("");
         setIsPinnedToBottom(true);
       } catch {
-        /* silent — the LLM call will surface any real error */
+        /* silent — the LLM call will show any real error */
       } finally {
         setPromptExpanding(null);
       }

@@ -24,7 +24,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { MCP_NPX_PACKAGE } from "../src/lib/constants";
+import { MCP_NPX_COMMAND } from "../src/lib/constants";
 
 /**
  * Loads `.env` then `.env.local` into `process.env`, leaving
@@ -51,11 +51,11 @@ function loadEnvFiles(): void {
 
 loadEnvFiles();
 
-// `--prefer-online` makes npx revalidate against the registry on
-// every run rather than reusing whatever version sits in its cache.
-// Combined with the unpinned package name, each `dev:full` picks up
-// the registry's current `latest` automatically.
-const mcpCmd = process.env.MCP_SERVER_CMD?.trim() || `npx --prefer-online ${MCP_NPX_PACKAGE}`;
+// Default to the canonical npx command — see `MCP_NPX_COMMAND` for
+// the flag rationale. `MCP_SERVER_CMD` from `.env.local` (or the
+// shell) wins for contributors with a local checkout or a custom
+// command.
+const mcpCmd = process.env.MCP_SERVER_CMD?.trim() || MCP_NPX_COMMAND;
 
 const concurrentlyArgs = [
   "concurrently",

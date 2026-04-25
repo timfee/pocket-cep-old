@@ -49,7 +49,7 @@ const ACTIVITY_PAGE_SIZE = 250;
  * both code paths.
  *
  * Throws `AuthError` on credential failure so the caller (route or RSC)
- * can decide how to surface it. Non-auth failures resolve to an empty
+ * can decide how to show it. Non-auth failures resolve to an empty
  * map — activity badges are optional.
  */
 export async function getCachedActivity(

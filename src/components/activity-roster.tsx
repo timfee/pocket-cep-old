@@ -10,7 +10,7 @@
  * current props (not from localStorage) so server/client first render
  * agree — no hydration trap.
  *
- * Each row surfaces an accessible tooltip explaining what the numeric
+ * Each row carries an accessible tooltip explaining what the numeric
  * count means (Chrome audit-log events in the last 7 days).
  */
 

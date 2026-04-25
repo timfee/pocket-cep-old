@@ -2,7 +2,7 @@
  * @file Server-side user search combobox with debounced typeahead.
  *
  * Pre-fetches a recent-activity map on mount and uses it to:
- * - surface users with activity even before the directory search returns
+ * - show users with activity even before the directory search returns
  * - show a dot + event count on users with recent Chrome events
  * - rank active users above inactive ones in search results
  *

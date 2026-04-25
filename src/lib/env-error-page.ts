@@ -286,7 +286,7 @@ export function renderMcpUnreachableHtml(url: string): string {
   return renderSetupBlockedHtml({
     pageTitle: "Pocket CEP — MCP server unreachable",
     heading: "MCP server unreachable",
-    lede: `Pocket CEP can't reach the Chrome Enterprise Premium MCP server. The dashboard won't work until it's running — every chat turn needs it for tools and prompts.`,
+    lede: `Pocket CEP can't reach the Chrome Enterprise Premium MCP server. Pocket CEP calls MCP on every chat turn for tools and prompts, so the dashboard won't load until it's running.`,
     failuresHeading: "Endpoint",
     failures: [{ code: url, message: "fetch failed" }],
     primaryAction: {

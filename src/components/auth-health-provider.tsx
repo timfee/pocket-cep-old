@@ -67,7 +67,7 @@ export function AuthHealthProvider({ children }: { children: ReactNode }) {
 
 /**
  * Hook for reading auth-health state. Throws if used outside the
- * provider — surfaces wiring mistakes early.
+ * provider so wiring mistakes fail loudly at first render.
  */
 export function useAuthHealth(): AuthHealthValue {
   const ctx = useContext(AuthHealthContext);

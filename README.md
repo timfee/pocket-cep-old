@@ -12,7 +12,7 @@ The app is deliberately educational. An **MCP Inspector** panel shows every JSON
 
 ### Features
 
-- **User investigation** — search the Google Workspace directory (Admin SDK REST), with users who have recent Chrome audit activity pulled to the top. A sidebar "Recent activity" roster surfaces the most-active users in the last 10 days.
+- **User investigation** — search the Google Workspace directory (Admin SDK REST). Pocket CEP pulls users with recent Chrome audit activity to the top of the list, and the "Recent activity" sidebar lists the most-active users from the last 10 days.
 - **Server-authored prompts** — MCP `prompts/list` and `prompts/get` drive the suggested-action cards. Clicking a prompt expands it server-side and sends its authored text (including any formatting contract) to the model.
 - **Dual LLM support** — Claude (Anthropic) or Gemini (Google) via the Vercel AI SDK v6's `@ai-sdk/anthropic` and `@ai-sdk/google` providers.
 - **Two auth modes** — ADC for simple demos, or forward the signed-in user's Google OAuth token for per-user attribution.
@@ -109,9 +109,9 @@ at the bottom). Uncomment only what you need to change.
 | `ANTHROPIC_API_KEY` | — | Required when `LLM_PROVIDER=claude`. |
 | `GOOGLE_AI_API_KEY` | — | Required when `LLM_PROVIDER=gemini`. |
 | `MCP_SERVER_URL` | `http://localhost:4000/mcp` | CEP MCP server HTTP endpoint. |
-| `MCP_SERVER_CMD` | *(unset)* | Override the MCP server start command. Read by `npm run dev:full` and `npm run doctor` from `.env.local` or the shell. Default: `npx --prefer-online @google/chrome-enterprise-premium-mcp` (npx resolves `latest` on each run; `--prefer-online` skips the cache so a new release is picked up the next time you start dev). Not parsed by the app at runtime. |
+| `MCP_SERVER_CMD` | *(unset)* | Override the MCP server start command. Read by `npm run dev:full` and `npm run doctor` from `.env.local` or the shell. Default: `npx -y --prefer-online --registry=https://registry.npmjs.org/ @google/chrome-enterprise-premium-mcp` — `-y` skips the first-run install prompt, `--prefer-online` revalidates so each run picks up the registry's `latest`, and `--registry=...` pins the public npm registry (corporate Artifact Registry mirrors 404 on `/advisories/bulk`, which produces minutes of `silly audit` retries). Not parsed by the app at runtime. |
 
-All app-side variables are validated at startup with Zod — missing or malformed values surface as a startup error pointing you to the fix.
+Pocket CEP validates app-side variables at startup with Zod. Missing or malformed values throw a startup error that names the field and the fix.
 
 ## Auth Modes
 
@@ -199,7 +199,7 @@ Each piece serves a specific purpose:
 - **`PORT=4000`** — the port the upstream binds when running in HTTP mode. Matches `MCP_SERVER_URL`'s default of `http://localhost:4000/mcp`.
 - **`LOG_LEVEL=warn`** — quiets the upstream server's info logs so they don't drown out Next's logs in the same terminal. The MCP server still emits warnings and errors at this level.
 - **`tail -f /dev/null |`** — pipes a never-closing stream into the MCP child's stdin. Without this, the child sees stdin EOF immediately and exits — the upstream server treats stdin EOF as a shutdown signal even in HTTP mode.
-- **`$MCP_SERVER_CMD`** — the start command. Defaults to `npx --prefer-online @google/chrome-enterprise-premium-mcp` (no version specifier, so npx resolves the registry's current `latest` each run). Override it by setting `MCP_SERVER_CMD` in `.env.local` (preferred — persists across sessions) or in your shell:
+- **`$MCP_SERVER_CMD`** — the start command. Defaults to `npx -y --prefer-online --registry=https://registry.npmjs.org/ @google/chrome-enterprise-premium-mcp`. Three flags carry their weight: `-y` auto-confirms the first-run install prompt (otherwise the spawned child hangs waiting on stdin); `--prefer-online` makes npx revalidate against the registry on every run, so each launch picks up the registry's current `latest` even if a stale version sits in the local npx cache; `--registry=https://registry.npmjs.org/` pins the public npm registry, which sidesteps corporate Artifact Registry mirrors that 404 on `/advisories/bulk` and dump minutes of `silly audit` retries. Override the whole command by setting `MCP_SERVER_CMD` in `.env.local` (preferred — persists across sessions) or in your shell:
 
 ```
 # .env.local (no quoting; values are read literally)
@@ -214,7 +214,7 @@ If you prefer to manage the MCP server yourself:
 
 ```bash
 # Terminal 1: MCP server
-GCP_STDIO=false PORT=4000 npx --prefer-online @google/chrome-enterprise-premium-mcp
+GCP_STDIO=false PORT=4000 npx -y --prefer-online --registry=https://registry.npmjs.org/ @google/chrome-enterprise-premium-mcp
 
 # Terminal 2: Pocket CEP
 npm run dev
@@ -510,7 +510,7 @@ The MCP tool catalog is cached in-process (5 min TTL, keyed by a SHA-256 hash of
 
 ### Server-authored prompts
 
-MCP servers expose **prompts** in addition to tools — structured conversation starters that carry formatting contracts (tables, severity tiers, tone rules). Pocket CEP surfaces them as suggestion cards:
+MCP servers expose **prompts** in addition to tools — structured conversation starters that carry formatting contracts (tables, severity tiers, tone rules). Pocket CEP renders them as suggestion cards:
 
 1. `GET /api/prompts` → MCP `prompts/list` → render one card per prompt (with the server-assigned `cep:*` name as a badge).
 2. Clicking a card → `POST /api/prompts` → MCP `prompts/get` → server returns the expanded message body.
@@ -518,7 +518,7 @@ MCP servers expose **prompts** in addition to tools — structured conversation 
 
 ### MCP communication
 
-Pocket CEP uses the official `@modelcontextprotocol/sdk` over HTTP. `StreamableHTTPClientTransport` sends JSON-RPC 2.0 to `POST /mcp`. Each call opens a fresh connection (the upstream server is stateless). In `user_oauth` mode, the signed-in user's Google access token is injected as a `Bearer` header.
+Pocket CEP uses the official `@modelcontextprotocol/sdk` over HTTP. `StreamableHTTPClientTransport` sends JSON-RPC 2.0 to `POST /mcp`. Each call opens a fresh connection (the upstream server is stateless). In `user_oauth` mode, Pocket CEP injects the signed-in user's Google access token as a `Bearer` header.
 
 ## Design System
 

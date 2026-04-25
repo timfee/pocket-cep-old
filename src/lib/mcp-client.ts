@@ -93,7 +93,7 @@ async function connect(
       throw new Error(
         `Cannot connect to MCP server at ${serverUrl}. ` +
           "Is it running? Start it with: npm run dev:full " +
-          "(or: GCP_STDIO=false PORT=4000 npx --prefer-online @google/chrome-enterprise-premium-mcp)",
+          "(or: GCP_STDIO=false PORT=4000 npx -y --prefer-online --registry=https://registry.npmjs.org/ @google/chrome-enterprise-premium-mcp)",
       );
     }
 

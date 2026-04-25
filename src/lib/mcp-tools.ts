@@ -82,7 +82,7 @@ export async function getMcpToolsForAiSdk(
 
         /**
          * Auth-shaped tool errors get promoted to thrown AuthError so the
-         * AI SDK surfaces them as `state: 'output-error'` with the
+         * AI SDK reports them as `state: 'output-error'` with the
          * structured payload. Non-auth errors pass through as content so
          * the model can narrate them to the user.
          */

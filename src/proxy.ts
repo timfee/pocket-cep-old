@@ -62,7 +62,7 @@ async function isMcpReachable(url: string): Promise<boolean> {
  * session state, then gates dashboard requests on MCP reachability.
  *
  * Two setup-blocker failures short-circuit with a styled HTML page
- * (rather than letting the raw Next.js dev overlay surface):
+ * (rather than the raw Next.js dev overlay):
  *   1. `EnvValidationError` from `getEnv()` — missing required env.
  *   2. MCP server unreachable — the dashboard is functionally broken
  *      without it, so we treat it as critical, same shape as the env

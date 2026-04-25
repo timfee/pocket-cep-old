@@ -10,7 +10,7 @@
 
 /**
  * Discriminated auth-error codes. `unknown_auth` is a deliberate escape
- * hatch — we'd rather surface a generic "re-authenticate" nudge than miss
+ * hatch — we'd rather show a generic "re-authenticate" nudge than miss
  * a classification entirely.
  */
 export type AuthErrorCode =
@@ -197,8 +197,8 @@ function buildPayload(
       return {
         code,
         source,
-        message: "An authentication error occurred.",
-        remedy: "Try re-running `gcloud auth login` and retry.",
+        message: "Pocket CEP couldn't authenticate the request to Google.",
+        remedy: "Run `gcloud auth login` and retry.",
         command: "gcloud auth login",
         docsUrl,
       };

@@ -43,7 +43,7 @@ export async function GET() {
      * to retry — during `npm run dev:full` the Next app boots ahead of
      * the MCP server and the first call can ECONNREFUSED briefly. We
      * still return an empty `prompts` array so the UI's shape stays
-     * stable when SWR surfaces the payload.
+     * stable when SWR returns the payload.
      */
     console.log(LOG_TAGS.MCP, "listMcpPrompts failed:", getErrorMessage(error));
     return NextResponse.json({ prompts: [], error: getErrorMessage(error) }, { status: 503 });

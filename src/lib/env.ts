@@ -17,7 +17,7 @@ import { DEFAULT_MCP_URL } from "./constants";
 /**
  * Regex-validated Google OAuth client ID. The strict format check catches
  * common copy-paste mistakes (e.g. trailing whitespace, wrapped in quotes)
- * before they surface as cryptic OAuth errors at runtime.
+ * before they show up as cryptic OAuth errors at runtime.
  */
 const googleClientId = z
   .string()

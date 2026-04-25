@@ -8,7 +8,7 @@
  * navigation pay one upstream call, not two.
  *
  * Auth failures return HTTP 401 with an AuthErrorPayload so the banner
- * and user-selector can surface the remedy instead of silently showing
+ * and user-selector can show the remedy instead of silently showing
  * empty activity.
  */
 

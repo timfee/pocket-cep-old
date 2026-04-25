@@ -125,7 +125,7 @@ function resolveModelOption(
 /**
  * Instantiates the Vercel AI SDK model for the selected provider,
  * preferring a caller-supplied BYOK key, then the server env key.
- * Throws if neither is available so the client can surface a helpful
+ * Throws if neither is available so the client can show a helpful
  * "missing key" message instead of the chat silently looping.
  */
 function buildModel(

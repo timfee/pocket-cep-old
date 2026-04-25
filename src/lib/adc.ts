@@ -16,7 +16,7 @@ import { GOOGLE_API_SCOPES } from "./google-scopes";
  *
  * Throws `AuthError` on any auth-related failure (invalid_rapt,
  * invalid_grant, missing ADC, UNAUTHENTICATED). Non-auth failures are
- * rethrown untouched so upstream code can surface them verbatim.
+ * rethrown untouched so upstream code can report them verbatim.
  */
 export async function getADCToken(): Promise<string> {
   try {
