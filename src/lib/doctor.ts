@@ -82,10 +82,13 @@ type AutoStartFailure =
   | { kind: "timeout"; output: string };
 
 /**
- * Starts the upstream MCP server temporarily — same npx invocation
- * `npm run dev:full` uses — and waits for it to become reachable. Used
- * by the MCP probe when the URL is the managed default and the user
- * almost certainly hasn't started the server themselves.
+ * Starts the upstream MCP server temporarily — same invocation
+ * `npm run dev:full` uses — and waits for it to become reachable.
+ * Honours `MCP_SERVER_CMD` so contributors with a working alternative
+ * (local cmcp checkout, a registry override, etc.) can avoid the
+ * default npx path. Used by the MCP probe when the URL is the
+ * managed default and the user almost certainly hasn't started the
+ * server themselves.
  *
  * Returns the live probe result + the child handle (so the caller
  * can run tools/prompts checks then kill the child) on success, or a
@@ -97,8 +100,14 @@ async function tryStartManagedMcpServer(
 ): Promise<
   { ok: true; child: ChildProcess; result: CheckResult } | { ok: false; failure: AutoStartFailure }
 > {
+  // `MCP_SERVER_CMD` overrides the default. Same convention as
+  // `dev:full`: contributors with a local cmcp checkout, a registry
+  // override, or any other working command can keep using it without
+  // editing the doctor.
+  const cmdOverride = process.env.MCP_SERVER_CMD?.trim();
+  const description = cmdOverride ?? `npx ${MCP_NPX_PACKAGE}`;
   process.stdout.write(
-    `\n  \x1b[2mMCP server not running. Starting \`${MCP_NPX_PACKAGE}\` temporarily…\x1b[0m`,
+    `\n  \x1b[2mMCP server not running. Starting \`${description}\` temporarily…\x1b[0m`,
   );
 
   // `stdio: ["pipe", "pipe", "pipe"]` — keep an open writable pipe on
@@ -108,10 +117,10 @@ async function tryStartManagedMcpServer(
   // stdout/stderr are also piped + buffered so a child that exits
   // early can have its diagnostic surfaced — `ignore` would discard
   // exactly the message the user needs to see.
-  const child = spawn("npx", [MCP_NPX_PACKAGE], {
-    env: { ...process.env, PORT: "4000", GCP_STDIO: "false", LOG_LEVEL: "error" },
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  const env = { ...process.env, PORT: "4000", GCP_STDIO: "false", LOG_LEVEL: "error" };
+  const child = cmdOverride
+    ? spawn(cmdOverride, { env, stdio: ["pipe", "pipe", "pipe"], shell: true })
+    : spawn("npx", [MCP_NPX_PACKAGE], { env, stdio: ["pipe", "pipe", "pipe"] });
 
   // Bounded ring buffer — we want the tail of the child's output, not
   // its head, since meaningful errors usually surface last.
