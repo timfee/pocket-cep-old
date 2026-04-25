@@ -26,6 +26,7 @@ import {
   probeMcpServer,
 } from "../src/lib/doctor-checks";
 import { formatGcloudLoginCommand } from "../src/lib/google-scopes";
+import { inferLlmProvider, type EnvMap } from "./setup-helpers";
 
 const ENV_PATH = resolve(process.cwd(), ".env.local");
 
@@ -36,7 +37,6 @@ const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
 const RESET = "\x1b[0m";
 
-type EnvMap = Record<string, string>;
 
 /**
  * Parses an existing .env.local into a map so we can preserve unknown
@@ -163,13 +163,19 @@ async function chooseAuthMode(current: string | undefined) {
 
 /**
  * Step 2: LLM provider. Validation happens on the API-key step
- * downstream — we only pick the provider here.
+ * downstream — we only pick the provider here. The default is
+ * inferred from `.env.local` (explicit `LLM_PROVIDER` first, then
+ * which API key happens to be set) so re-running setup with an
+ * already-pasted key pre-selects the matching provider instead of
+ * always landing on Claude.
  */
-async function chooseLlmProvider(current: string | undefined) {
+async function chooseLlmProvider(existing: EnvMap) {
   banner("Step 2 · LLM provider", "Which model powers the chat agent?");
+  const inferred = inferLlmProvider(existing);
+  if (inferred.reason) note(inferred.reason);
   return select<"claude" | "gemini">({
     message: "Which provider?",
-    default: current === "gemini" ? "gemini" : "claude",
+    default: inferred.value,
     choices: [
       {
         name: "claude · Anthropic Claude (via @ai-sdk/anthropic)",
@@ -576,7 +582,7 @@ async function main() {
   const existing = readExistingEnv();
 
   const authMode = await chooseAuthMode(existing.AUTH_MODE);
-  const llmProvider = await chooseLlmProvider(existing.LLM_PROVIDER);
+  const llmProvider = await chooseLlmProvider(existing);
   const authSecret = await chooseAuthSecret(existing.BETTER_AUTH_SECRET);
 
   const apiKey =
