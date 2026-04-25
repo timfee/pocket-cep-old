@@ -42,9 +42,23 @@ npm run dev:full
 
 Prefer to configure by hand? Copy `.env.local.example` to `.env.local`
 and fill in the blanks, then run `npm run doctor` to verify. Service-account
-mode also needs ADC: `gcloud auth application-default login` with the
-scopes shown in `.env.local.example`, followed by
-`gcloud auth application-default set-quota-project YOUR_PROJECT_ID`.
+mode also needs ADC — paste this single-line command (do not break it
+across lines):
+
+```bash
+gcloud auth application-default login --scopes="https://www.googleapis.com/auth/chrome.management.policy,https://www.googleapis.com/auth/chrome.management.reports.readonly,https://www.googleapis.com/auth/chrome.management.profiles.readonly,https://www.googleapis.com/auth/admin.reports.audit.readonly,https://www.googleapis.com/auth/admin.reports.usage.readonly,https://www.googleapis.com/auth/admin.directory.user.readonly,https://www.googleapis.com/auth/admin.directory.orgunit.readonly,https://www.googleapis.com/auth/admin.directory.customer.readonly,https://www.googleapis.com/auth/cloud-identity.policies,https://www.googleapis.com/auth/apps.licensing,https://www.googleapis.com/auth/cloud-platform"
+```
+
+Then pin a quota project:
+
+```bash
+gcloud auth application-default set-quota-project YOUR_PROJECT_ID
+```
+
+Scopes can't be added to existing ADC credentials. If you get
+"insufficient scopes" errors, delete
+`~/.config/gcloud/application_default_credentials.json` and re-run the
+login command above.
 
 If the dev server starts but env vars are missing, the landing page shows
 a setup-required screen pointing back at `npm run setup`.

@@ -25,6 +25,7 @@ import {
   probeGeminiKey,
   probeMcpServer,
 } from "../src/lib/doctor-checks";
+import { formatGcloudLoginCommand } from "../src/lib/google-scopes";
 
 const ENV_PATH = resolve(process.cwd(), ".env.local");
 
@@ -430,12 +431,11 @@ async function ensureAdcLogin(): Promise<void> {
     }
     failClear(`ADC not ready — ${result.message}`);
 
-    console.log(`${DIM}Pocket CEP needs a Workspace admin's ADC to call the${RESET}`);
-    console.log(`${DIM}Admin SDK + Admin Reports API. Run these in another terminal:${RESET}\n`);
-    console.log(
-      `  ${CYAN}gcloud auth application-default login \\${RESET}\n` +
-        `  ${CYAN}  --scopes="https://www.googleapis.com/auth/admin.reports.audit.readonly,https://www.googleapis.com/auth/admin.directory.orgunit.readonly,https://www.googleapis.com/auth/cloud-platform"${RESET}`,
-    );
+    console.log(`${DIM}Pocket CEP needs a Workspace admin's ADC to call Chrome${RESET}`);
+    console.log(`${DIM}Management, Admin SDK Directory + Reports, Cloud Identity,${RESET}`);
+    console.log(`${DIM}and Licensing APIs. Run these in another terminal — paste${RESET}`);
+    console.log(`${DIM}each command as a single line:${RESET}\n`);
+    console.log(`  ${CYAN}${formatGcloudLoginCommand()}${RESET}\n`);
     console.log(
       `  ${CYAN}gcloud auth application-default set-quota-project YOUR_PROJECT_ID${RESET}\n`,
     );
