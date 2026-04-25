@@ -313,10 +313,12 @@ async function promptGeminiKey(current: string | undefined) {
 const GOOGLE_CLIENT_ID_RE = /^\d+-\w+\.apps\.googleusercontent\.com$/;
 
 /**
- * Step 5: Google OAuth client credentials. Only runs in user_oauth
- * mode. The client ID format is strict, so we validate it with the
- * same regex the Zod env schema uses — catch paste errors here rather
- * than as a cryptic OAuth error at runtime.
+ * Step 5 (user_oauth mode): Google OAuth client credentials. The
+ * client ID format is strict, so we validate it with the same regex
+ * the Zod env schema uses — catches paste errors here rather than as
+ * a cryptic OAuth error at runtime. Mutually exclusive with the
+ * service_account-mode `walkAdcSetup` below — the user only ever
+ * sees one of them per setup run.
  */
 async function promptGoogleOAuth(current: EnvMap) {
   banner(
@@ -564,41 +566,70 @@ async function ensureQuotaProject(): Promise<void> {
     );
   }
 
-  const projectId = await input({
-    message: "Project ID for ADC quota:",
-    default: detected ?? undefined,
-    validate: (v) => {
-      const trimmed = v.trim();
-      if (!trimmed) return "Project ID is required";
-      if (!PROJECT_ID_RE.test(trimmed)) {
-        return "Project IDs are 6-30 chars, lowercase letters/digits/hyphens, starting with a letter";
-      }
-      return true;
-    },
-  });
+  // Loop until set-quota-project succeeds or the user opts out.
+  // gcloud rejects IDs the user has no access to even when the syntax
+  // is valid; the regex can't catch that, so retry-with-a-different-ID
+  // is the natural recovery path.
+  let suggestedDefault = detected ?? undefined;
+  for (;;) {
+    const projectId = await input({
+      message: "Project ID for ADC quota:",
+      default: suggestedDefault,
+      validate: (v) => {
+        const trimmed = v.trim();
+        if (!trimmed) return "Project ID is required";
+        if (!PROJECT_ID_RE.test(trimmed)) {
+          return "Project IDs are 6-30 chars, lowercase letters/digits/hyphens, starting with a letter";
+        }
+        return true;
+      },
+    });
 
-  const trimmed = projectId.trim();
-  checking(`Setting quota project to ${trimmed}`);
-  const set = spawnSync(
-    "gcloud",
-    ["auth", "application-default", "set-quota-project", trimmed],
-    { stdio: "ignore" },
-  );
-  if (set.status === 0) {
-    okClear(`Quota project set to ${trimmed}`);
-    return;
+    const trimmed = projectId.trim();
+    checking(`Setting quota project to ${trimmed}`);
+    const set = spawnSync(
+      "gcloud",
+      ["auth", "application-default", "set-quota-project", trimmed],
+      { stdio: "ignore" },
+    );
+    if (set.status === 0) {
+      okClear(`Quota project set to ${trimmed}`);
+      return;
+    }
+    failClear(`\`gcloud\` rejected ${trimmed} — wrong ID, or no access?`);
+
+    const next = await select<"retry" | "skip">({
+      message: "What next?",
+      default: "retry",
+      choices: [
+        { name: "Try a different project ID", value: "retry" },
+        {
+          name: "Skip — set it manually later",
+          value: "skip",
+          description: "Run `gcloud auth application-default set-quota-project <id>` yourself.",
+        },
+      ],
+    });
+
+    if (next === "skip") {
+      console.log(`${DIM}Run manually once you have the right project ID:${RESET}`);
+      console.log(
+        `  ${CYAN}gcloud auth application-default set-quota-project YOUR_PROJECT_ID${RESET}\n`,
+      );
+      return;
+    }
+    // Drop the rejected ID as the default so the user re-enters fresh.
+    suggestedDefault = undefined;
   }
-  failClear("`gcloud` rejected the project ID");
-  console.log(`${DIM}Run manually:${RESET}`);
-  console.log(`  ${CYAN}gcloud auth application-default set-quota-project ${trimmed}${RESET}\n`);
 }
 
 /**
- * Step 5: in service_account mode we need Google ADC. Walks three
- * checkpoints with a re-check-or-skip loop at each: install gcloud,
- * log in to ADC, then pin a quota project. The user controls the
- * pace; any step can be skipped and verified later with `npm run
- * doctor`.
+ * Step 5 (service_account mode): walks three Google ADC checkpoints
+ * with a re-check-or-skip loop at each — install gcloud, log in to
+ * ADC, then pin a quota project. The user controls the pace; any
+ * step can be skipped and verified later with `npm run doctor`.
+ * Mutually exclusive with the user_oauth-mode `promptGoogleOAuth`
+ * above.
  */
 async function walkAdcSetup() {
   banner("Step 5 · Google ADC", "Service account mode uses your gcloud ADC credentials.");

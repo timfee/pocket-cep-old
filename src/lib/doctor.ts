@@ -118,6 +118,9 @@ async function tryStartManagedMcpServer(
   });
 
   const deadline = Date.now() + 60_000;
+  // Probe before sleeping so an instantly-ready server doesn't pay
+  // the 500ms tick. Only loops sleep.
+  let firstIteration = true;
   while (Date.now() < deadline) {
     if (spawnError !== null) {
       process.stdout.write("\n");
@@ -128,8 +131,11 @@ async function tryStartManagedMcpServer(
       process.stdout.write("\n");
       return { ok: false, failure: { kind: "child_exited", code: child.exitCode } };
     }
-    await new Promise((r) => setTimeout(r, 500));
-    process.stdout.write(".");
+    if (!firstIteration) {
+      await new Promise((r) => setTimeout(r, 500));
+      process.stdout.write(".");
+    }
+    firstIteration = false;
     const probe = await probeMcpServer(url);
     if (probe.ok) {
       process.stdout.write(" ready.\n");
@@ -360,9 +366,26 @@ async function main() {
     }
     restoreConsole = muteLibraryLogs();
   }
-  process.once("SIGINT", () => {
+  // Cover three exit paths so the temporary MCP child never orphans:
+  //   - SIGINT (Ctrl-C) — user-initiated cancel
+  //   - uncaughtException — main() throws before the explicit kill
+  //   - SIGTERM — supervisor signals us to stop
+  // The happy path still calls kill explicitly before finishWithSummary.
+  const cleanupChild = () => {
     if (mcpChild && !mcpChild.killed) mcpChild.kill("SIGTERM");
+  };
+  process.once("SIGINT", () => {
+    cleanupChild();
     process.exit(130);
+  });
+  process.once("SIGTERM", () => {
+    cleanupChild();
+    process.exit(143);
+  });
+  process.once("uncaughtException", (err) => {
+    cleanupChild();
+    console.error("Doctor crashed:", err);
+    process.exit(1);
   });
 
   const adcLines: CheckLine[] = [];
