@@ -142,3 +142,107 @@ describe("proxy — normal auth routing", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 });
+
+describe("proxy — MCP reachability gate", () => {
+  // Each test gets a fresh proxy module so the in-memory MCP health
+  // cache (module-level mutable state) doesn't pollute across cases.
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  it("returns 503 + HTML when MCP is unreachable for /dashboard", async () => {
+    vi.doMock("@/lib/env", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("@/lib/env")>();
+      return { ...actual, getEnv: mockGetEnv };
+    });
+    vi.doMock("better-auth/cookies", () => ({ getSessionCookie: mockGetSessionCookie }));
+    vi.doMock("@/lib/doctor-checks", () => ({
+      probeMcpServer: vi.fn().mockResolvedValue({ ok: false, message: "fetch failed" }),
+    }));
+    mockGetEnv.mockReturnValue({
+      AUTH_MODE: "service_account",
+      MCP_SERVER_URL: "http://localhost:4000/mcp",
+    });
+    mockGetSessionCookie.mockReturnValue("signed-cookie");
+
+    const { proxy: proxyImpl } = await import("@/proxy");
+    const { NextRequest: Req } = await import("next/server");
+    const res = await proxyImpl(new Req(new URL("http://localhost:3000/dashboard")));
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("content-type")).toMatch(/text\/html/);
+    const body = await res.text();
+    expect(body).toContain("MCP server unreachable");
+    expect(body).toContain("http://localhost:4000/mcp");
+    expect(body).toContain("npm run dev:full");
+  });
+
+  it("falls through to next() when MCP is reachable for /dashboard", async () => {
+    vi.doMock("@/lib/env", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("@/lib/env")>();
+      return { ...actual, getEnv: mockGetEnv };
+    });
+    vi.doMock("better-auth/cookies", () => ({ getSessionCookie: mockGetSessionCookie }));
+    vi.doMock("@/lib/doctor-checks", () => ({
+      probeMcpServer: vi.fn().mockResolvedValue({ ok: true, message: "ok" }),
+    }));
+    mockGetEnv.mockReturnValue({
+      AUTH_MODE: "service_account",
+      MCP_SERVER_URL: "http://localhost:4000/mcp",
+    });
+    mockGetSessionCookie.mockReturnValue("signed-cookie");
+
+    const { proxy: proxyImpl } = await import("@/proxy");
+    const { NextRequest: Req } = await import("next/server");
+    const res = await proxyImpl(new Req(new URL("http://localhost:3000/dashboard")));
+
+    // NextResponse.next() lets the request continue: no 503 short-circuit,
+    // no redirect, no HTML body content-type set on the response.
+    expect(res.status).not.toBe(503);
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("does not probe MCP for non-dashboard paths (landing page is unaffected)", async () => {
+    const probe = vi.fn().mockResolvedValue({ ok: false, message: "fetch failed" });
+    vi.doMock("@/lib/env", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("@/lib/env")>();
+      return { ...actual, getEnv: mockGetEnv };
+    });
+    vi.doMock("better-auth/cookies", () => ({ getSessionCookie: mockGetSessionCookie }));
+    vi.doMock("@/lib/doctor-checks", () => ({ probeMcpServer: probe }));
+    mockGetEnv.mockReturnValue({
+      AUTH_MODE: "user_oauth",
+      MCP_SERVER_URL: "http://localhost:4000/mcp",
+    });
+    mockGetSessionCookie.mockReturnValue(null);
+
+    const { proxy: proxyImpl } = await import("@/proxy");
+    const { NextRequest: Req } = await import("next/server");
+    await proxyImpl(new Req(new URL("http://localhost:3000/")));
+
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("caches the ok probe result (subsequent /dashboard requests skip the call)", async () => {
+    const probe = vi.fn().mockResolvedValue({ ok: true, message: "ok" });
+    vi.doMock("@/lib/env", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("@/lib/env")>();
+      return { ...actual, getEnv: mockGetEnv };
+    });
+    vi.doMock("better-auth/cookies", () => ({ getSessionCookie: mockGetSessionCookie }));
+    vi.doMock("@/lib/doctor-checks", () => ({ probeMcpServer: probe }));
+    mockGetEnv.mockReturnValue({
+      AUTH_MODE: "service_account",
+      MCP_SERVER_URL: "http://localhost:4000/mcp",
+    });
+    mockGetSessionCookie.mockReturnValue("signed-cookie");
+
+    const { proxy: proxyImpl } = await import("@/proxy");
+    const { NextRequest: Req } = await import("next/server");
+    await proxyImpl(new Req(new URL("http://localhost:3000/dashboard")));
+    await proxyImpl(new Req(new URL("http://localhost:3000/dashboard/extra")));
+
+    expect(probe).toHaveBeenCalledTimes(1);
+  });
+});

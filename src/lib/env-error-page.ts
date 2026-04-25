@@ -1,21 +1,29 @@
 /**
- * @file Renders a standalone HTML page describing environment
- * validation failures.
+ * @file Renders standalone HTML pages for "setup blocker" errors —
+ * conditions that should prevent the dashboard from rendering at all
+ * and instead show a clear, actionable instruction page.
  *
- * Shipped by the proxy middleware so the user sees a friendly, styled
- * page with a clear call to action (`npm run setup`) instead of the
- * raw Next.js error overlay.
+ * Two variants currently:
+ *   - {@link renderEnvErrorHtml} — `.env.local` is missing required
+ *     values. Triggered by `EnvValidationError` from `getEnv()`.
+ *   - {@link renderMcpUnreachableHtml} — the MCP server isn't
+ *     running. Triggered by the proxy middleware's reachability
+ *     probe on dashboard requests.
+ *
+ * Both share a single generic template so the design language stays
+ * consistent — same colors, same lockup, same call-to-action style —
+ * even though the copy and remediation differ.
  *
  * Self-contained: no external fonts, no external CSS, no React. The
  * middleware runtime runs before the app bundle loads, so everything
- * a new contributor sees comes from the string this file returns.
+ * a contributor sees has to travel in one string.
  */
 
 import type { EnvValidationIssue } from "@/lib/env";
 
 /**
  * HTML-escapes a string so user-controlled content (env var names,
- * Zod messages) can't break out of the template.
+ * URLs, Zod messages) can't break out of the template.
  */
 function escapeHtml(s: string): string {
   return s
@@ -27,15 +35,32 @@ function escapeHtml(s: string): string {
 }
 
 /**
- * Returns a full HTML document that lists the validation issues and
- * points the reader at `npm run setup`. Designed to be rendered as-is
- * by the middleware: no template engine, no asset pipeline.
+ * Generic shape of a setup blocker — what to title the page, what to
+ * tell the reader, and which fix to suggest. Both the env-error and
+ * MCP-unreachable variants are constructed by filling this in.
  */
-export function renderEnvErrorHtml(issues: ReadonlyArray<EnvValidationIssue>): string {
-  const issueItems = issues
+type SetupBlocker = {
+  pageTitle: string;
+  heading: string;
+  lede: string;
+  failuresHeading: string;
+  failures: ReadonlyArray<{ code: string; message: string }>;
+  primaryAction: { command: string; description: string };
+  alternativeNote?: string;
+  footerHint: string;
+};
+
+/**
+ * Builds the full HTML document for a setup blocker page. Inline
+ * styles, Roboto fallback chain, and an MD3 palette match the rest
+ * of the app so a contributor seeing this for the first time still
+ * recognises it as Pocket CEP.
+ */
+function renderSetupBlockedHtml(blocker: SetupBlocker): string {
+  const failureItems = blocker.failures
     .map(
-      (i) =>
-        `      <li><code class="var">${escapeHtml(i.path)}</code><span class="msg">${escapeHtml(i.message)}</span></li>`,
+      (f) =>
+        `      <li><code class="code">${escapeHtml(f.code)}</code><span class="msg">${escapeHtml(f.message)}</span></li>`,
     )
     .join("\n");
 
@@ -44,7 +69,7 @@ export function renderEnvErrorHtml(issues: ReadonlyArray<EnvValidationIssue>): s
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pocket CEP — setup required</title>
+<title>${escapeHtml(blocker.pageTitle)}</title>
 <style>
   :root {
     --primary: #1a73e8;
@@ -139,11 +164,12 @@ export function renderEnvErrorHtml(issues: ReadonlyArray<EnvValidationIssue>): s
     gap: 0.125rem;
   }
   li:first-child { border-top: 0; }
-  code.var {
+  code.code {
     font-family: "Roboto Mono", ui-monospace, monospace;
     font-size: 0.8125rem;
     color: var(--error);
     font-weight: 500;
+    word-break: break-all;
   }
   .msg {
     font-size: 0.875rem;
@@ -206,23 +232,70 @@ export function renderEnvErrorHtml(issues: ReadonlyArray<EnvValidationIssue>): s
   <main>
     <header>
       <span class="glyph" aria-hidden="true">!</span>
-      <h1>Environment setup required</h1>
+      <h1>${escapeHtml(blocker.heading)}</h1>
     </header>
-    <p class="lede">Pocket CEP can't start until the following environment variables are set in <code>.env.local</code>.</p>
+    <p class="lede">${blocker.lede}</p>
 
-    <h2>Missing or invalid</h2>
+    <h2>${escapeHtml(blocker.failuresHeading)}</h2>
     <ul role="list">
-${issueItems}
+${failureItems}
     </ul>
 
     <div class="cta">
-      <p><strong>Run the guided setup.</strong> It walks through auth mode, API keys, and ADC — and validates each value against the real provider before writing.</p>
-      <span class="cmd">npm run setup</span>
-      <p class="alt">Prefer editing by hand? Copy <code>.env.local.example</code> to <code>.env.local</code> and fill in the blanks.</p>
+      <p>${blocker.primaryAction.description}</p>
+      <span class="cmd">${escapeHtml(blocker.primaryAction.command)}</span>
+${blocker.alternativeNote ? `      <p class="alt">${blocker.alternativeNote}</p>` : ""}
     </div>
 
-    <footer>Save <code>.env.local</code> and refresh this page.</footer>
+    <footer>${blocker.footerHint}</footer>
   </main>
 </body>
 </html>`;
+}
+
+/**
+ * Builds the setup-required page for `EnvValidationError` from
+ * `getEnv()`. The proxy middleware swaps in this page when the
+ * dashboard's first env read fails.
+ */
+export function renderEnvErrorHtml(issues: ReadonlyArray<EnvValidationIssue>): string {
+  return renderSetupBlockedHtml({
+    pageTitle: "Pocket CEP — setup required",
+    heading: "Environment setup required",
+    lede: "Pocket CEP can't start until the following environment variables are set in <code>.env.local</code>.",
+    failuresHeading: "Missing or invalid",
+    failures: issues.map((i) => ({ code: i.path, message: i.message })),
+    primaryAction: {
+      command: "npm run setup",
+      description:
+        "<strong>Run the guided setup.</strong> It walks through auth mode, API keys, and ADC — and validates each value against the real provider before writing.",
+    },
+    alternativeNote:
+      "Prefer editing by hand? Copy <code>.env.local.example</code> to <code>.env.local</code> and fill in the blanks.",
+    footerHint: "Save <code>.env.local</code> and refresh this page.",
+  });
+}
+
+/**
+ * Builds the setup-required page when the MCP server can't be
+ * reached. Treated as a critical block (not a banner) because the
+ * dashboard is functionally broken without MCP — every chat turn
+ * needs it for tools and prompts.
+ */
+export function renderMcpUnreachableHtml(url: string): string {
+  return renderSetupBlockedHtml({
+    pageTitle: "Pocket CEP — MCP server unreachable",
+    heading: "MCP server unreachable",
+    lede: `Pocket CEP can't reach the Chrome Enterprise Premium MCP server. The dashboard won't work until it's running — every chat turn needs it for tools and prompts.`,
+    failuresHeading: "Endpoint",
+    failures: [{ code: url, message: "fetch failed" }],
+    primaryAction: {
+      command: "npm run dev:full",
+      description:
+        "<strong>Start the MCP server alongside Next.</strong> The script reads <code>MCP_SERVER_CMD</code> from <code>.env.local</code> if you've configured a custom command.",
+    },
+    alternativeNote:
+      "Already running it elsewhere? Check that <code>MCP_SERVER_URL</code> in <code>.env.local</code> points at the right host. <code>npm run doctor</code> will tell you what it's probing.",
+    footerHint: "Once the MCP server is running, refresh this page.",
+  });
 }

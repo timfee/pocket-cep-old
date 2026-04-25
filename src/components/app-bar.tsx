@@ -24,22 +24,16 @@ export function AppBar() {
   };
 
   return (
-    <header className="bg-surface border-on-surface/10 relative z-10 flex h-14 shrink-0 items-center border-b px-4 sm:px-6">
+    <header className="bg-surface relative z-10 flex h-14 shrink-0 items-center px-4 sm:px-6">
       <div className="mx-auto flex w-full max-w-[1680px] items-center gap-6">
         <Link
           href="/"
           aria-label="Pocket CEP homepage"
-          className="flex shrink-0 items-center gap-3"
+          className="text-on-surface shrink-0 text-base font-semibold tracking-tight"
         >
-          <span className="text-on-surface text-base font-semibold tracking-tight">
-            Pocket{" "}
-            <span className="from-primary to-primary/70 bg-linear-to-br bg-clip-text text-transparent">
-              CEP
-            </span>
-          </span>
-          <span className="bg-on-surface/10 h-4 w-px shrink-0 max-lg:hidden" aria-hidden="true" />
-          <span className="text-on-surface-variant text-[0.8125rem] max-lg:hidden">
-            Chrome Enterprise Premium
+          Pocket{" "}
+          <span className="from-primary to-primary/70 bg-linear-to-br bg-clip-text text-transparent">
+            CEP
           </span>
         </Link>
 
@@ -52,11 +46,16 @@ export function AppBar() {
         </nav>
       </div>
 
-      {/* Whisper-thin gradient strip along the bar's bottom edge — feels more
-          intentional than a flat 1px border without overpowering the chrome. */}
+      {/*
+        Bar divider: a primary-tinted gradient line. Replaces the prior
+        `border-b border-on-surface/10` (which was overlapping a much
+        more subtle gradient and effectively hiding it). Fades in from
+        the edges so it doesn't look like a hard slab — the 50% peak
+        keeps it visible on the dashboard's pale surface.
+      */}
       <div
         aria-hidden="true"
-        className="from-primary/0 via-primary/20 to-primary/0 pointer-events-none absolute inset-x-0 -bottom-px h-px bg-linear-to-r"
+        className="from-primary/0 via-primary/50 to-primary/0 pointer-events-none absolute inset-x-0 bottom-0 h-px bg-linear-to-r"
       />
     </header>
   );
