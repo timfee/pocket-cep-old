@@ -14,7 +14,8 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { select, input, password, confirm } from "@inquirer/prompts";
 import { spawnSync } from "node:child_process";
@@ -430,25 +431,27 @@ async function ensureGcloudInstalled(): Promise<boolean> {
 
 /**
  * Loops on "re-check or skip" until the ADC token exchange succeeds
- * or the user opts out. Assumes gcloud is already installed.
+ * or the user opts out. Assumes gcloud is already installed. Returns
+ * true on a successful login (so the caller can chain quota-project
+ * setup) or false on skip.
  */
-async function ensureAdcLogin(): Promise<void> {
+async function ensureAdcLogin(): Promise<boolean> {
   for (;;) {
     checking("Checking Google ADC");
     const result = await probeAdcToken();
     if (result.ok) {
       okClear("ADC is configured and working");
-      return;
+      return true;
     }
     failClear(`ADC not ready — ${result.message}`);
 
     console.log(`${DIM}Pocket CEP needs a Workspace admin's ADC to call Chrome${RESET}`);
     console.log(`${DIM}Management, Admin SDK Directory + Reports, Cloud Identity,${RESET}`);
-    console.log(`${DIM}and Licensing APIs. Run these in another terminal — paste${RESET}`);
-    console.log(`${DIM}each command as a single line:${RESET}\n`);
+    console.log(`${DIM}and Licensing APIs. Run this in another terminal — paste${RESET}`);
+    console.log(`${DIM}as a single line:${RESET}\n`);
     console.log(`  ${CYAN}${formatGcloudLoginCommand()}${RESET}\n`);
     console.log(
-      `  ${CYAN}gcloud auth application-default set-quota-project YOUR_PROJECT_ID${RESET}\n`,
+      `${DIM}Setup will help pin a quota project once login succeeds.${RESET}\n`,
     );
 
     const next = await select<"recheck" | "skip">({
@@ -470,21 +473,142 @@ async function ensureAdcLogin(): Promise<void> {
 
     if (next === "skip") {
       note("Skipping ADC check. Run `npm run doctor` after logging in to verify.");
-      return;
+      return false;
     }
   }
 }
 
 /**
- * Step 5: in service_account mode we need Google ADC. Walks through
- * both the "install gcloud" and "log in" checkpoints with a
- * re-check-or-skip loop at each step so the user controls the pace.
+ * Reads the quota_project_id from the ADC credentials file directly
+ * (uncached, sync) so a quota project freshly written by gcloud is
+ * visible immediately. Returns null when the file is missing, the
+ * field is absent, or the JSON is malformed.
+ */
+function readAdcQuotaProject(): string | null {
+  try {
+    const credPath = join(homedir(), ".config", "gcloud", "application_default_credentials.json");
+    if (!existsSync(credPath)) return null;
+    const raw: unknown = JSON.parse(readFileSync(credPath, "utf-8"));
+    if (raw && typeof raw === "object" && "quota_project_id" in raw) {
+      const value = (raw as { quota_project_id?: unknown }).quota_project_id;
+      return typeof value === "string" && value.length > 0 ? value : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+type GcloudProject = { projectId: string; name: string };
+
+/**
+ * Returns the user's GCP projects via `gcloud projects list`, or null
+ * if the call fails (no permissions, gcloud not authenticated, etc.).
+ * Limited to 200 entries so the picker stays responsive on huge orgs;
+ * users with more can fall back to typing a project ID by hand.
+ */
+function listGcloudProjects(): GcloudProject[] | null {
+  const result = spawnSync(
+    "gcloud",
+    ["projects", "list", "--format=json", "--limit=200"],
+    { encoding: "utf-8" },
+  );
+  if (result.status !== 0) return null;
+  try {
+    const parsed: unknown = JSON.parse(result.stdout);
+    if (!Array.isArray(parsed)) return null;
+    return parsed
+      .filter((p): p is { projectId: string; name?: string } => {
+        return !!p && typeof p === "object" && typeof (p as { projectId?: unknown }).projectId === "string";
+      })
+      .map((p) => ({ projectId: p.projectId, name: p.name ?? p.projectId }));
+  } catch {
+    return null;
+  }
+}
+
+const MANUAL_ENTRY = "__MANUAL__";
+
+/**
+ * Picks a quota project: lists projects via gcloud, lets the user
+ * select one (with a manual-entry escape hatch), then runs
+ * `gcloud auth application-default set-quota-project` for them.
+ * Falls back to a printed command if any step fails.
+ */
+async function ensureQuotaProject(): Promise<void> {
+  const existing = readAdcQuotaProject();
+  if (existing) {
+    console.log(`  ${GREEN}✓${RESET} ADC quota project already set: ${CYAN}${existing}${RESET}\n`);
+    return;
+  }
+
+  console.log(`${DIM}ADC has no quota project pinned yet. Pocket CEP needs one${RESET}`);
+  console.log(`${DIM}so Workspace API calls bill and rate-limit against your project.${RESET}\n`);
+
+  checking("Listing your GCP projects");
+  const projects = listGcloudProjects();
+  if (projects === null || projects.length === 0) {
+    failClear(
+      projects === null
+        ? "Couldn't run `gcloud projects list`"
+        : "No GCP projects visible to your gcloud account",
+    );
+    console.log(`${DIM}Once you have a project ID, run:${RESET}`);
+    console.log(`  ${CYAN}gcloud auth application-default set-quota-project YOUR_PROJECT_ID${RESET}\n`);
+    return;
+  }
+  okClear(`Found ${projects.length} project${projects.length === 1 ? "" : "s"}`);
+
+  const choices = [
+    ...projects.map((p) => ({
+      name: p.projectId === p.name ? p.projectId : `${p.projectId} — ${p.name}`,
+      value: p.projectId,
+    })),
+    { name: "Enter a project ID manually", value: MANUAL_ENTRY },
+  ];
+
+  const picked = await select<string>({
+    message: "Which project should ADC pin to?",
+    choices,
+  });
+
+  const projectId =
+    picked === MANUAL_ENTRY
+      ? await input({
+          message: "Project ID:",
+          validate: (v) => (v.trim().length > 0 ? true : "Project ID is required"),
+        })
+      : picked;
+
+  checking(`Setting quota project to ${projectId}`);
+  const set = spawnSync(
+    "gcloud",
+    ["auth", "application-default", "set-quota-project", projectId.trim()],
+    { stdio: "ignore" },
+  );
+  if (set.status === 0) {
+    okClear(`Quota project set to ${projectId.trim()}`);
+    return;
+  }
+  failClear("`gcloud` rejected the project ID");
+  console.log(`${DIM}Run manually:${RESET}`);
+  console.log(`  ${CYAN}gcloud auth application-default set-quota-project ${projectId.trim()}${RESET}\n`);
+}
+
+/**
+ * Step 5: in service_account mode we need Google ADC. Walks three
+ * checkpoints with a re-check-or-skip loop at each: install gcloud,
+ * log in to ADC, then pin a quota project. The user controls the
+ * pace; any step can be skipped and verified later with `npm run
+ * doctor`.
  */
 async function walkAdcSetup() {
   banner("Step 5 · Google ADC", "Service account mode uses your gcloud ADC credentials.");
   const gcloudOk = await ensureGcloudInstalled();
   if (!gcloudOk) return;
-  await ensureAdcLogin();
+  const loggedIn = await ensureAdcLogin();
+  if (!loggedIn) return;
+  await ensureQuotaProject();
 }
 
 /**
@@ -593,6 +717,12 @@ async function main() {
       ? await promptAnthropicKey(existing.ANTHROPIC_API_KEY)
       : await promptGeminiKey(existing.GOOGLE_AI_API_KEY);
 
+  note(
+    "Tip: the in-app model picker (top bar) lets you paste keys for any\n" +
+      "provider — Claude, Gemini, OpenAI — for casual use. Keys live in your\n" +
+      "browser's localStorage only. No need to re-run setup.",
+  );
+
   let clientId = "";
   let clientSecret = "";
   if (authMode === "user_oauth") {
@@ -615,12 +745,14 @@ async function main() {
     LLM_MODEL: modelOverride,
   };
 
+  // Only set the chosen provider's key; leave any previously-set keys
+  // for the other provider(s) intact. The Zod schema discriminates on
+  // LLM_PROVIDER and only requires the matching key — extras are
+  // allowed, and the in-app model picker can use them as BYOK.
   if (llmProvider === "claude") {
     merged.ANTHROPIC_API_KEY = apiKey;
-    merged.GOOGLE_AI_API_KEY = "";
   } else {
     merged.GOOGLE_AI_API_KEY = apiKey;
-    merged.ANTHROPIC_API_KEY = "";
   }
 
   if (authMode === "user_oauth") {
