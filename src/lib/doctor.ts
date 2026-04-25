@@ -78,8 +78,8 @@ function parseEnvFile(filePath: string): Record<string, string> {
  */
 type AutoStartFailure =
   | { kind: "spawn_error"; error: Error }
-  | { kind: "child_exited"; code: number | null }
-  | { kind: "timeout" };
+  | { kind: "child_exited"; code: number | null; output: string }
+  | { kind: "timeout"; output: string };
 
 /**
  * Starts the upstream MCP server temporarily — same npx invocation
@@ -101,16 +101,28 @@ async function tryStartManagedMcpServer(
     `\n  \x1b[2mMCP server not running. Starting \`${MCP_NPX_PACKAGE}\` temporarily…\x1b[0m`,
   );
 
-  // `stdio: ["pipe", "ignore", "ignore"]` keeps an open writable pipe
-  // on the child's stdin. The upstream MCP server treats stdin EOF as
-  // a shutdown signal even in HTTP mode, so the simpler
-  // `stdio: "ignore"` (which connects stdin to /dev/null) makes the
-  // child exit within milliseconds. `dev:full` works around this with
-  // `tail -f /dev/null |`; this is the Node-native equivalent.
+  // `stdio: ["pipe", "pipe", "pipe"]` — keep an open writable pipe on
+  // the child's stdin (the upstream MCP server treats stdin EOF as a
+  // shutdown signal even in HTTP mode; `dev:full` works around this
+  // with `tail -f /dev/null |`, this is the Node-native equivalent).
+  // stdout/stderr are also piped + buffered so a child that exits
+  // early can have its diagnostic surfaced — `ignore` would discard
+  // exactly the message the user needs to see.
   const child = spawn("npx", [MCP_NPX_PACKAGE], {
     env: { ...process.env, PORT: "4000", GCP_STDIO: "false", LOG_LEVEL: "error" },
-    stdio: ["pipe", "ignore", "ignore"],
+    stdio: ["pipe", "pipe", "pipe"],
   });
+
+  // Bounded ring buffer — we want the tail of the child's output, not
+  // its head, since meaningful errors usually surface last.
+  const MAX_BUFFER = 4096;
+  let captured = "";
+  const append = (chunk: Buffer | string) => {
+    captured += typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+    if (captured.length > MAX_BUFFER) captured = captured.slice(-MAX_BUFFER);
+  };
+  child.stdout?.on("data", append);
+  child.stderr?.on("data", append);
 
   let spawnError: Error | null = null;
   child.once("error", (err) => {
@@ -129,7 +141,10 @@ async function tryStartManagedMcpServer(
     }
     if (child.exitCode !== null) {
       process.stdout.write("\n");
-      return { ok: false, failure: { kind: "child_exited", code: child.exitCode } };
+      return {
+        ok: false,
+        failure: { kind: "child_exited", code: child.exitCode, output: captured.trim() },
+      };
     }
     if (!firstIteration) {
       await new Promise((r) => setTimeout(r, 500));
@@ -145,7 +160,7 @@ async function tryStartManagedMcpServer(
 
   process.stdout.write(" timed out.\n");
   if (!child.killed) child.kill("SIGTERM");
-  return { ok: false, failure: { kind: "timeout" } };
+  return { ok: false, failure: { kind: "timeout", output: captured.trim() } };
 }
 
 /**
@@ -426,7 +441,29 @@ async function main() {
   const mcpFix = autoStartFailure
     ? autoStartFailureFix(autoStartFailure)
     : "Fix: npm run dev:full   (or start the MCP server separately on PORT=4000)";
-  const mcpLines: CheckLine[] = [probeLine(mcpResult, mcpWhy, mcpFix)];
+  const mcpLine = probeLine(mcpResult, mcpWhy, mcpFix);
+  // When the auto-start child captured stderr/stdout before exiting,
+  // surface its tail under the fix hint so the user sees the actual
+  // upstream error rather than just doctor's reaction to it.
+  if (
+    mcpLine.status === "fail" &&
+    autoStartFailure &&
+    "output" in autoStartFailure &&
+    autoStartFailure.output
+  ) {
+    const lines = autoStartFailure.output
+      .split(/\r?\n/)
+      .filter((l) => l.trim().length > 0)
+      .slice(-10);
+    if (lines.length > 0) {
+      mcpLine.details = [
+        ...(mcpLine.details ?? []),
+        "Upstream output (last lines):",
+        ...lines.map((l) => `    ${l}`),
+      ];
+    }
+  }
+  const mcpLines: CheckLine[] = [mcpLine];
 
   if (mcpResult.ok) {
     const { listMcpTools, listMcpPrompts } = await import("./mcp-client");

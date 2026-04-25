@@ -11,14 +11,18 @@
  *
  * Safe to re-run: existing .env.local values are loaded as defaults and
  * any keys we don't recognise are preserved unchanged on write.
+ *
+ * The CLI uses `@clack/prompts` for the modern boxed/connected step
+ * style (the same prompt library Astro, Solid, Bun, and Drizzle use).
  */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
-import { select, input, password, confirm } from "@inquirer/prompts";
 import { spawnSync } from "node:child_process";
+
+import * as p from "@clack/prompts";
 
 import {
   probeAdcToken,
@@ -32,13 +36,19 @@ import { inferLlmProvider, type EnvMap } from "./setup-helpers";
 
 const ENV_PATH = resolve(process.cwd(), ".env.local");
 
-const DIM = "\x1b[2m";
-const BOLD = "\x1b[1m";
-const CYAN = "\x1b[36m";
-const GREEN = "\x1b[32m";
-const YELLOW = "\x1b[33m";
-const RESET = "\x1b[0m";
-
+/**
+ * Wraps every clack prompt so cancellation (Ctrl-C, ESC) terminates
+ * the script cleanly. Without this, clack returns a Symbol that would
+ * silently flow into downstream logic.
+ */
+async function ask<T>(promise: Promise<T | symbol>): Promise<T> {
+  const value = await promise;
+  if (p.isCancel(value)) {
+    p.cancel("Setup cancelled.");
+    process.exit(0);
+  }
+  return value as T;
+}
 
 /**
  * Parses an existing .env.local into a map so we can preserve unknown
@@ -107,62 +117,73 @@ function writeEnv(env: EnvMap): void {
   writeFileSync(ENV_PATH, lines.join("\n"), { mode: 0o600 });
 }
 
-function banner(title: string, subtitle?: string) {
-  console.log(`\n${BOLD}${title}${RESET}`);
-  if (subtitle) console.log(`${DIM}${subtitle}${RESET}`);
-}
-
-function note(text: string) {
-  console.log(`${DIM}${text}${RESET}`);
-}
-
-function checking(msg: string) {
-  process.stdout.write(`  ${YELLOW}…${RESET} ${msg}…`);
-}
-
-function okClear(msg: string) {
-  process.stdout.write(`\r  ${GREEN}✓${RESET} ${msg}${" ".repeat(20)}\n`);
-}
-
-function failClear(msg: string) {
-  process.stdout.write(`\r  \x1b[31m✗${RESET} ${msg}${" ".repeat(20)}\n`);
-}
-
-/**
- * Wraps an inquirer `validate` callback that calls an upstream API so
- * the prompt's own red-text error line does the heavy lifting. Returns
- * `true` on success, an error string on failure (inquirer's contract).
- */
-async function validateWithProbe(
-  probe: () => Promise<{ ok: boolean; message: string }>,
-  successMessage: string,
-): Promise<true | string> {
-  const result = await probe();
-  return result.ok ? true : `${successMessage.replace("accepted", "rejected")} — ${result.message}`;
-}
-
 /**
  * Step 1: auth mode. We explain both flavors inline and use the
  * existing .env.local value as the default if re-running setup.
  */
 async function chooseAuthMode(current: string | undefined) {
-  banner("Step 1 · Authentication mode", "How does Pocket CEP talk to Google APIs?");
-  return select<"service_account" | "user_oauth">({
-    message: "Which auth mode?",
-    default: current === "user_oauth" ? "user_oauth" : "service_account",
-    choices: [
-      {
-        name: "service_account · ADC (recommended for local demos)",
-        value: "service_account",
-        description: "Uses `gcloud auth application-default login`. No user sign-in; shared identity.",
-      },
-      {
-        name: "user_oauth · Google OAuth (per-user attribution)",
-        value: "user_oauth",
-        description: "Users sign in with Google. Their token is forwarded to the MCP server.",
-      },
-    ],
-  });
+  p.log.step("Step 1/6 · Authentication mode");
+  return ask<"service_account" | "user_oauth">(
+    p.select({
+      message: "How does Pocket CEP talk to Google APIs?",
+      initialValue: current === "user_oauth" ? "user_oauth" : "service_account",
+      options: [
+        {
+          label: "Service account (recommended for local demos)",
+          value: "service_account",
+          hint: "Uses `gcloud auth application-default login`. No user sign-in; shared identity.",
+        },
+        {
+          label: "User OAuth (per-user attribution)",
+          value: "user_oauth",
+          hint: "Users sign in with Google. Their token is forwarded to the MCP server.",
+        },
+      ],
+    }),
+  );
+}
+
+const SECRET_PLACEHOLDER = "please-change-me-to-a-real-secret";
+
+/**
+ * Step 2: BETTER_AUTH_SECRET. Comes right after auth mode so the auth
+ * setup stays grouped (the LLM provider+key pair flows next as a
+ * single unit). If the current value looks unsafe (missing or the
+ * placeholder from .env.local.example), we offer to generate a fresh
+ * one. Otherwise we leave it untouched.
+ */
+async function chooseAuthSecret(current: string | undefined): Promise<string> {
+  p.log.step("Step 2/6 · BetterAuth signing secret");
+
+  const hasReal = current && current !== SECRET_PLACEHOLDER && current.length >= 32;
+  if (hasReal) {
+    const keep = await ask(
+      p.confirm({
+        message: "An existing BETTER_AUTH_SECRET looks valid. Keep it?",
+        initialValue: true,
+      }),
+    );
+    if (keep) return current;
+  }
+
+  const generate = await ask(
+    p.confirm({
+      message: "Generate a cryptographically random 32-byte secret now?",
+      initialValue: true,
+    }),
+  );
+  if (generate) {
+    const secret = randomBytes(32).toString("base64");
+    p.log.success("Generated a fresh 32-byte secret.");
+    return secret;
+  }
+
+  return ask(
+    p.password({
+      message: "Paste your own BETTER_AUTH_SECRET",
+      validate: (v) => (v && v.trim().length >= 16 ? undefined : "Use at least 16 characters"),
+    }),
+  );
 }
 
 /**
@@ -174,64 +195,27 @@ async function chooseAuthMode(current: string | undefined) {
  * always landing on Claude.
  */
 async function chooseLlmProvider(existing: EnvMap) {
-  banner("Step 3 · LLM provider", "Which model powers the chat agent?");
+  p.log.step("Step 3/6 · LLM provider");
   const inferred = inferLlmProvider(existing);
-  if (inferred.reason) note(inferred.reason);
-  return select<"claude" | "gemini">({
-    message: "Which provider?",
-    default: inferred.value,
-    choices: [
-      {
-        name: "claude · Anthropic Claude (via @ai-sdk/anthropic)",
-        value: "claude",
-        description: "Requires an ANTHROPIC_API_KEY from https://console.anthropic.com/",
-      },
-      {
-        name: "gemini · Google Generative AI (via @ai-sdk/google)",
-        value: "gemini",
-        description: "Requires a GOOGLE_AI_API_KEY from https://aistudio.google.com/apikey",
-      },
-    ],
-  });
-}
-
-/**
- * Step 2: BETTER_AUTH_SECRET. Comes right after auth mode so the auth
- * setup stays grouped (the LLM provider+key pair flows next as a
- * single unit). If the current value looks unsafe (missing or the
- * placeholder from .env.local.example), we offer to generate a fresh
- * one. Otherwise we leave it untouched.
- */
-async function chooseAuthSecret(current: string | undefined): Promise<string> {
-  banner("Step 2 · BetterAuth signing secret", "Signs the session cookie. Treat it like a password.");
-
-  const placeholder = "please-change-me-to-a-real-secret";
-  const hasReal = current && current !== placeholder && current.length >= 32;
-
-  if (hasReal) {
-    const keep = await confirm({
-      message: "An existing BETTER_AUTH_SECRET looks valid. Keep it?",
-      default: true,
-    });
-    if (keep) return current;
-  }
-
-  const generate = await confirm({
-    message: "Generate a cryptographically random 32-byte secret now?",
-    default: true,
-  });
-
-  if (generate) {
-    const secret = randomBytes(32).toString("base64");
-    console.log(`  ${GREEN}✓${RESET} Generated a new 32-byte secret.`);
-    return secret;
-  }
-
-  return password({
-    message: "Paste your own BETTER_AUTH_SECRET:",
-    mask: "•",
-    validate: (v) => (v.trim().length >= 16 ? true : "Use at least 16 characters"),
-  });
+  if (inferred.reason) p.log.info(inferred.reason);
+  return ask<"claude" | "gemini">(
+    p.select({
+      message: "Which model powers the chat agent?",
+      initialValue: inferred.value,
+      options: [
+        {
+          label: "Anthropic Claude",
+          value: "claude",
+          hint: "via @ai-sdk/anthropic — needs ANTHROPIC_API_KEY (console.anthropic.com)",
+        },
+        {
+          label: "Google Gemini",
+          value: "gemini",
+          hint: "via @ai-sdk/google — needs GOOGLE_AI_API_KEY (aistudio.google.com/apikey)",
+        },
+      ],
+    }),
+  );
 }
 
 /**
@@ -245,69 +229,93 @@ async function tryKeepExistingKey(
   probe: (value: string) => Promise<{ ok: boolean; message: string }>,
 ): Promise<string | null> {
   if (!current) return null;
-  checking(`Probing existing ${label}`);
+  const s = p.spinner();
+  s.start(`Probing existing ${label}`);
   const result = await probe(current);
   if (!result.ok) {
-    failClear(`Existing ${label} was rejected — you'll need to paste a new one`);
+    s.stop(`Existing ${label} was rejected — paste a new one`);
     return null;
   }
-  okClear(`Existing ${label} is valid`);
-  const keep = await confirm({ message: `Keep the existing ${label}?`, default: true });
+  s.stop(`Existing ${label} works`);
+  const keep = await ask(
+    p.confirm({ message: `Keep the existing ${label}?`, initialValue: true }),
+  );
   return keep ? current : null;
 }
 
 /**
- * Step 4a: Anthropic key — masked input, validated by the same
- * /v1/messages probe doctor uses. If the key is wrong we re-prompt;
- * we never move on with a bad key.
+ * Step 4 (claude): Anthropic key — masked input, validated by the
+ * same /v1/messages probe doctor uses. If the key is wrong we
+ * re-prompt; we never move on with a bad key.
  */
 async function promptAnthropicKey(current: string | undefined) {
-  banner(
-    "Step 4 · ANTHROPIC_API_KEY",
-    "We'll probe https://api.anthropic.com/v1/messages to confirm it works.",
-  );
-  note("Get one at https://console.anthropic.com/ → Settings → API Keys");
+  p.log.step("Step 4/6 · ANTHROPIC_API_KEY");
+  p.log.info("We'll probe api.anthropic.com to confirm the key works.");
 
   const kept = await tryKeepExistingKey("Anthropic key", current, probeAnthropicKey);
   if (kept) return kept;
 
-  return password({
-    message: "Paste your Anthropic API key:",
-    mask: "•",
-    validate: async (value) => {
-      const trimmed = value.trim();
-      if (!trimmed) return "Key is required";
-      if (!trimmed.startsWith("sk-ant-")) {
-        return "Anthropic keys start with `sk-ant-` — double-check the value";
-      }
-      return validateWithProbe(() => probeAnthropicKey(trimmed), "Key accepted");
-    },
-  });
+  // clack's `validate` is synchronous (returns string | Error | undefined),
+  // so the API probe runs in a loop after the prompt. The prompt itself
+  // only does the cheap format check.
+  for (;;) {
+    const key = await ask(
+      p.password({
+        message: "Paste your Anthropic API key (console.anthropic.com → Settings → API Keys)",
+        validate: (value) => {
+          if (!value) return "Key is required";
+          const trimmed = value.trim();
+          if (!trimmed) return "Key is required";
+          if (!trimmed.startsWith("sk-ant-")) {
+            return "Anthropic keys start with `sk-ant-` — double-check the value";
+          }
+          return undefined;
+        },
+      }),
+    );
+    const trimmed = key.trim();
+    const s = p.spinner();
+    s.start("Probing key against api.anthropic.com");
+    const probe = await probeAnthropicKey(trimmed);
+    if (probe.ok) {
+      s.stop("Key accepted");
+      return trimmed;
+    }
+    s.stop(`Key rejected — ${probe.message}`);
+  }
 }
 
 /**
- * Step 4b: Google AI key — validated by listing models on
+ * Step 4 (gemini): Google AI key — validated by listing models on
  * generativelanguage.googleapis.com.
  */
 async function promptGeminiKey(current: string | undefined) {
-  banner(
-    "Step 4 · GOOGLE_AI_API_KEY",
-    "We'll probe generativelanguage.googleapis.com/v1beta/models to confirm it works.",
-  );
-  note("Get one at https://aistudio.google.com/apikey");
+  p.log.step("Step 4/6 · GOOGLE_AI_API_KEY");
+  p.log.info("We'll probe generativelanguage.googleapis.com to confirm the key works.");
 
   const kept = await tryKeepExistingKey("Google AI key", current, probeGeminiKey);
   if (kept) return kept;
 
-  return password({
-    message: "Paste your Google AI API key:",
-    mask: "•",
-    validate: async (value) => {
-      const trimmed = value.trim();
-      if (!trimmed) return "Key is required";
-      return validateWithProbe(() => probeGeminiKey(trimmed), "Key accepted");
-    },
-  });
+  for (;;) {
+    const key = await ask(
+      p.password({
+        message: "Paste your Google AI API key (aistudio.google.com/apikey)",
+        validate: (value) => {
+          if (!value || !value.trim()) return "Key is required";
+          return undefined;
+        },
+      }),
+    );
+    const trimmed = key.trim();
+    const s = p.spinner();
+    s.start("Probing key against generativelanguage.googleapis.com");
+    const probe = await probeGeminiKey(trimmed);
+    if (probe.ok) {
+      s.stop("Key accepted");
+      return trimmed;
+    }
+    s.stop(`Key rejected — ${probe.message}`);
+  }
 }
 
 const GOOGLE_CLIENT_ID_RE = /^\d+-\w+\.apps\.googleusercontent\.com$/;
@@ -321,38 +329,42 @@ const GOOGLE_CLIENT_ID_RE = /^\d+-\w+\.apps\.googleusercontent\.com$/;
  * sees one of them per setup run.
  */
 async function promptGoogleOAuth(current: EnvMap) {
-  banner(
-    "Step 5 · Google OAuth client",
-    "console.cloud.google.com → APIs & Services → Credentials",
-  );
-  note(
-    "Add this redirect URI to your OAuth client:\n   http://localhost:3000/api/auth/callback/google",
+  p.log.step("Step 5/6 · Google OAuth client");
+  p.note(
+    "Visit console.cloud.google.com → APIs & Services → Credentials.\n" +
+      "Add this redirect URI to your OAuth client:\n" +
+      "  http://localhost:3000/api/auth/callback/google",
+    "OAuth client setup",
   );
 
-  const clientId = await input({
-    message: "GOOGLE_CLIENT_ID:",
-    default: current.GOOGLE_CLIENT_ID || undefined,
-    validate: (v) => {
-      const trimmed = v.trim();
-      if (!trimmed) return "Client ID is required";
-      return GOOGLE_CLIENT_ID_RE.test(trimmed)
-        ? true
-        : "Expected format: 123456789-abc.apps.googleusercontent.com";
-    },
-  });
+  const clientId = await ask(
+    p.text({
+      message: "GOOGLE_CLIENT_ID",
+      defaultValue: current.GOOGLE_CLIENT_ID || undefined,
+      validate: (v) => {
+        if (!v) return "Client ID is required";
+        const trimmed = v.trim();
+        if (!trimmed) return "Client ID is required";
+        return GOOGLE_CLIENT_ID_RE.test(trimmed)
+          ? undefined
+          : "Expected format: 123456789-abc.apps.googleusercontent.com";
+      },
+    }),
+  );
 
-  const clientSecret = await password({
-    message: "GOOGLE_CLIENT_SECRET:",
-    mask: "•",
-    validate: (v) => (v.trim().length > 0 ? true : "Client secret is required"),
-  });
+  const clientSecret = await ask(
+    p.password({
+      message: "GOOGLE_CLIENT_SECRET",
+      validate: (v) => (v && v.trim().length > 0 ? undefined : "Client secret is required"),
+    }),
+  );
 
   return { clientId: clientId.trim(), clientSecret: clientSecret.trim() };
 }
 
 /**
- * Returns true if the `gcloud` CLI is on PATH. ADC depends on it, so we
- * preflight before the ADC probe to give a clearer error when it's
+ * Returns true if the `gcloud` CLI is on PATH. ADC depends on it, so
+ * we preflight before the ADC probe to give a clearer error when it's
  * missing entirely (the probe's "no credentials" message is confusing
  * if the real cause is "gcloud isn't installed yet").
  */
@@ -361,27 +373,30 @@ function isGcloudInstalled(): boolean {
 }
 
 /**
- * Prints platform-appropriate gcloud install hints. Extracted so both
- * the "not installed" branch and the "still not installed after
- * re-check" branch render the same guidance.
+ * Returns the platform-appropriate install hint as one block of text
+ * suitable for `p.note()`. Extracted so both the "not installed" and
+ * "still not installed after re-check" branches render the same
+ * guidance.
  */
-function printGcloudInstallHints(): void {
-  console.log(`${DIM}The Google Cloud CLI is required for service-account mode —${RESET}`);
-  console.log(`${DIM}Pocket CEP uses your Application Default Credentials.${RESET}`);
-  console.log(`${DIM}Install it in another terminal, then come back:${RESET}\n`);
-
+function gcloudInstallHints(): string {
+  let install: string;
   if (process.platform === "darwin") {
-    console.log(`  ${CYAN}brew install --cask google-cloud-sdk${RESET}`);
-    console.log(`  ${DIM}or see https://cloud.google.com/sdk/docs/install-sdk${RESET}`);
+    install =
+      "  brew install --cask google-cloud-sdk\n" +
+      "  or see https://cloud.google.com/sdk/docs/install-sdk";
   } else if (process.platform === "linux") {
-    console.log(`  ${CYAN}https://cloud.google.com/sdk/docs/install-sdk#linux${RESET}`);
+    install = "  https://cloud.google.com/sdk/docs/install-sdk#linux";
   } else if (process.platform === "win32") {
-    console.log(`  ${CYAN}https://cloud.google.com/sdk/docs/install-sdk#windows${RESET}`);
+    install = "  https://cloud.google.com/sdk/docs/install-sdk#windows";
   } else {
-    console.log(`  ${CYAN}https://cloud.google.com/sdk/docs/install-sdk${RESET}`);
+    install = "  https://cloud.google.com/sdk/docs/install-sdk";
   }
-  console.log();
-  console.log(`${DIM}Tip: open a new shell after installing so PATH updates take effect.${RESET}\n`);
+  return (
+    "The Google Cloud CLI is required for service-account mode —\n" +
+    "Pocket CEP uses your Application Default Credentials.\n\n" +
+    install +
+    "\n\nTip: open a new shell after installing so PATH updates take effect."
+  );
 }
 
 /**
@@ -390,44 +405,52 @@ function printGcloudInstallHints(): void {
  * user opted to skip ADC entirely.
  */
 async function ensureGcloudInstalled(): Promise<boolean> {
-  checking("Checking for `gcloud`");
+  const s = p.spinner();
+  s.start("Checking for `gcloud`");
   if (isGcloudInstalled()) {
-    okClear("`gcloud` is installed");
+    s.stop("`gcloud` is installed");
     return true;
   }
-  failClear("`gcloud` is not installed");
+  s.stop("`gcloud` is not installed");
 
   for (;;) {
-    printGcloudInstallHints();
-    const next = await select<"recheck" | "skip">({
-      message: "When you're ready:",
-      default: "recheck",
-      choices: [
-        {
-          name: "I've installed gcloud — re-check now",
-          value: "recheck",
-          description: "Verifies `gcloud --version` succeeds, then continues with ADC.",
-        },
-        {
-          name: "Skip ADC for now",
-          value: "skip",
-          description: "Finish writing .env.local; run `npm run doctor` to verify later.",
-        },
-      ],
-    });
+    p.note(gcloudInstallHints(), "Install gcloud");
+    const next = await ask<"recheck" | "skip">(
+      p.select({
+        message: "When you're ready:",
+        initialValue: "recheck",
+        options: [
+          {
+            label: "I've installed gcloud — re-check now",
+            value: "recheck",
+            hint: "Verifies `gcloud --version` succeeds, then continues with ADC.",
+          },
+          {
+            label: "Skip ADC for now",
+            value: "skip",
+            hint: "Finish writing .env.local; run `npm run doctor` to verify later.",
+          },
+        ],
+      }),
+    );
 
     if (next === "skip") {
-      note("Skipping ADC. After installing gcloud, run:");
-      console.log(`  ${CYAN}gcloud auth application-default login${RESET}`);
-      console.log(`  ${CYAN}npm run doctor${RESET}\n`);
+      p.note(
+        "Once gcloud is installed:\n" +
+          "  gcloud auth application-default login\n" +
+          "  npm run doctor",
+        "Skipping ADC",
+      );
       return false;
     }
 
+    const recheck = p.spinner();
+    recheck.start("Re-checking for `gcloud`");
     if (isGcloudInstalled()) {
-      console.log(`  ${GREEN}✓${RESET} \`gcloud\` is installed\n`);
+      recheck.stop("`gcloud` is installed");
       return true;
     }
-    console.log(`  \x1b[31m✗${RESET} Still not found. Open a new shell to refresh PATH.\n`);
+    recheck.stop("Still not found. Open a new shell to refresh PATH.");
   }
 }
 
@@ -439,42 +462,46 @@ async function ensureGcloudInstalled(): Promise<boolean> {
  */
 async function ensureAdcLogin(): Promise<boolean> {
   for (;;) {
-    checking("Checking Google ADC");
+    const s = p.spinner();
+    s.start("Checking Google ADC");
     const result = await probeAdcToken();
     if (result.ok) {
-      okClear("ADC is configured and working");
+      s.stop("ADC is configured and working");
       return true;
     }
-    failClear(`ADC not ready — ${result.message}`);
+    s.stop(`ADC not ready — ${result.message}`);
 
-    console.log(`${DIM}Pocket CEP needs a Workspace admin's ADC to call Chrome${RESET}`);
-    console.log(`${DIM}Management, Admin SDK Directory + Reports, Cloud Identity,${RESET}`);
-    console.log(`${DIM}and Licensing APIs. Run this in another terminal — paste${RESET}`);
-    console.log(`${DIM}as a single line:${RESET}\n`);
-    console.log(`  ${CYAN}${formatGcloudLoginCommand()}${RESET}\n`);
-    console.log(
-      `${DIM}Setup will help pin a quota project once login succeeds.${RESET}\n`,
+    p.note(
+      "Pocket CEP needs a Workspace admin's ADC to call Chrome\n" +
+        "Management, Admin SDK Directory + Reports, Cloud Identity,\n" +
+        "and Licensing APIs.\n\n" +
+        "Run this in another terminal — paste as a single line:\n\n" +
+        formatGcloudLoginCommand() +
+        "\n\nSetup will help pin a quota project once login succeeds.",
+      "ADC login",
     );
 
-    const next = await select<"recheck" | "skip">({
-      message: "When you're ready:",
-      default: "recheck",
-      choices: [
-        {
-          name: "I've logged in — re-check now",
-          value: "recheck",
-          description: "Verifies the token exchange succeeds.",
-        },
-        {
-          name: "Skip for now",
-          value: "skip",
-          description: "`npm run doctor` will verify once you've logged in.",
-        },
-      ],
-    });
+    const next = await ask<"recheck" | "skip">(
+      p.select({
+        message: "When you're ready:",
+        initialValue: "recheck",
+        options: [
+          {
+            label: "I've logged in — re-check now",
+            value: "recheck",
+            hint: "Verifies the token exchange succeeds.",
+          },
+          {
+            label: "Skip for now",
+            value: "skip",
+            hint: "`npm run doctor` will verify once you've logged in.",
+          },
+        ],
+      }),
+    );
 
     if (next === "skip") {
-      note("Skipping ADC check. Run `npm run doctor` after logging in to verify.");
+      p.log.info("Skipping ADC check. Run `npm run doctor` after logging in to verify.");
       return false;
     }
   }
@@ -510,11 +537,9 @@ function readAdcQuotaProject(): string | null {
  * gcloud is missing, or any other failure.
  */
 function detectDefaultGcloudProject(): string | null {
-  const result = spawnSync(
-    "gcloud",
-    ["config", "get-value", "project", "--quiet"],
-    { encoding: "utf-8" },
-  );
+  const result = spawnSync("gcloud", ["config", "get-value", "project", "--quiet"], {
+    encoding: "utf-8",
+  });
   if (result.status !== 0) return null;
   const value = result.stdout.trim();
   if (!value || value === "(unset)") return null;
@@ -523,8 +548,8 @@ function detectDefaultGcloudProject(): string | null {
 
 /**
  * Project IDs: 6-30 chars, lowercase letters/digits/hyphens, must
- * start with a letter. Caught here as a paste-error guard before the
- * gcloud subprocess call.
+ * start with a letter and end with letter/digit. Caught here as a
+ * paste-error guard before the gcloud subprocess call.
  */
 const PROJECT_ID_RE = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
 
@@ -532,37 +557,31 @@ const PROJECT_ID_RE = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
  * Pins a quota project on the user's ADC credentials. Avoids
  * `gcloud projects list` because organisations frequently have
  * 100K+ projects and listing them all is slow and useless as a
- * picker. Instead we:
- *
- *   1. Read any existing quota_project_id from the ADC JSON. If set,
- *      just confirm it.
- *   2. Otherwise probe `gcloud config get-value project` for a
- *      sensible default.
- *   3. Prompt the user with that default pre-filled, plus inline
- *      help on how to find a project ID if they don't have one.
- *   4. Run `gcloud auth application-default set-quota-project` for
- *      them. Falls back to a printed manual command on any failure.
+ * picker. Instead we read any existing quota_project_id, fall back
+ * to `gcloud config get-value project`, and prompt the user with
+ * that as the default. Loops on retry-or-skip if gcloud rejects the
+ * ID (wrong project or no access).
  */
 async function ensureQuotaProject(): Promise<void> {
   const existing = readAdcQuotaProject();
   if (existing) {
-    console.log(`  ${GREEN}✓${RESET} ADC quota project already set: ${CYAN}${existing}${RESET}\n`);
+    p.log.success(`ADC quota project already set: ${existing}`);
     return;
   }
 
-  console.log(`${DIM}ADC has no quota project pinned yet. Pocket CEP needs one${RESET}`);
-  console.log(`${DIM}so Workspace API calls bill and rate-limit against your project.${RESET}\n`);
-
   const detected = detectDefaultGcloudProject();
   if (detected) {
-    console.log(
-      `${DIM}Your gcloud config has \`project=${detected}\` — pre-filled as the default.${RESET}\n`,
-    );
+    p.log.info(`Your gcloud config has \`project=${detected}\` — pre-filled as the default.`);
   } else {
-    console.log(`${DIM}If you don't know the project ID:${RESET}`);
-    console.log(`  ${DIM}• \`gcloud config get-value project\` shows your gcloud default${RESET}`);
-    console.log(
-      `  ${DIM}• console.cloud.google.com → project picker (top of page)${RESET}\n`,
+    p.note(
+      "ADC has no quota project pinned yet. Pocket CEP needs one\n" +
+        "so Workspace API calls bill and rate-limit against your project.\n\n" +
+        "If you don't know the project ID:\n" +
+        "  • `gcloud config get-value project` shows your gcloud default\n" +
+        "  • Visit https://console.cloud.google.com/projectselector2 —\n" +
+        "    find your project, copy the value in the **ID** column\n" +
+        "    (not the display name and not the numeric project number).",
+      "Pin a quota project",
     );
   }
 
@@ -572,53 +591,58 @@ async function ensureQuotaProject(): Promise<void> {
   // is the natural recovery path.
   let suggestedDefault = detected ?? undefined;
   for (;;) {
-    const projectId = await input({
-      message: "Project ID for ADC quota:",
-      default: suggestedDefault,
-      validate: (v) => {
-        const trimmed = v.trim();
-        if (!trimmed) return "Project ID is required";
-        if (!PROJECT_ID_RE.test(trimmed)) {
-          return "Project IDs are 6-30 chars, lowercase letters/digits/hyphens, starting with a letter";
-        }
-        return true;
-      },
-    });
+    const projectId = await ask(
+      p.text({
+        message: "Project ID for ADC quota",
+        defaultValue: suggestedDefault,
+        validate: (v) => {
+          if (!v) return "Project ID is required";
+          const trimmed = v.trim();
+          if (!trimmed) return "Project ID is required";
+          if (!PROJECT_ID_RE.test(trimmed)) {
+            return "Project IDs are 6-30 chars, lowercase letters/digits/hyphens, starting with a letter";
+          }
+          return undefined;
+        },
+      }),
+    );
 
     const trimmed = projectId.trim();
-    checking(`Setting quota project to ${trimmed}`);
+    const s = p.spinner();
+    s.start(`Setting quota project to ${trimmed}`);
     const set = spawnSync(
       "gcloud",
       ["auth", "application-default", "set-quota-project", trimmed],
       { stdio: "ignore" },
     );
     if (set.status === 0) {
-      okClear(`Quota project set to ${trimmed}`);
+      s.stop(`Quota project set to ${trimmed}`);
       return;
     }
-    failClear(`\`gcloud\` rejected ${trimmed} — wrong ID, or no access?`);
+    s.stop(`\`gcloud\` rejected ${trimmed} — wrong ID, or no access?`);
 
-    const next = await select<"retry" | "skip">({
-      message: "What next?",
-      default: "retry",
-      choices: [
-        { name: "Try a different project ID", value: "retry" },
-        {
-          name: "Skip — set it manually later",
-          value: "skip",
-          description: "Run `gcloud auth application-default set-quota-project <id>` yourself.",
-        },
-      ],
-    });
+    const next = await ask<"retry" | "skip">(
+      p.select({
+        message: "What next?",
+        initialValue: "retry",
+        options: [
+          { label: "Try a different project ID", value: "retry" },
+          {
+            label: "Skip — set it manually later",
+            value: "skip",
+            hint: "Run `gcloud auth application-default set-quota-project <id>` yourself.",
+          },
+        ],
+      }),
+    );
 
     if (next === "skip") {
-      console.log(`${DIM}Run manually once you have the right project ID:${RESET}`);
-      console.log(
-        `  ${CYAN}gcloud auth application-default set-quota-project YOUR_PROJECT_ID${RESET}\n`,
+      p.log.info(
+        "Run manually once you have the right project ID:\n" +
+          "  gcloud auth application-default set-quota-project YOUR_PROJECT_ID",
       );
       return;
     }
-    // Drop the rejected ID as the default so the user re-enters fresh.
     suggestedDefault = undefined;
   }
 }
@@ -632,7 +656,7 @@ async function ensureQuotaProject(): Promise<void> {
  * above.
  */
 async function walkAdcSetup() {
-  banner("Step 5 · Google ADC", "Service account mode uses your gcloud ADC credentials.");
+  p.log.step("Step 5/6 · Google ADC");
   const gcloudOk = await ensureGcloudInstalled();
   if (!gcloudOk) return;
   const loggedIn = await ensureAdcLogin();
@@ -649,91 +673,117 @@ async function walkAdcSetup() {
  * deployments.
  */
 async function chooseMcpUrl(current: string | undefined): Promise<string> {
-  banner(
-    "Step 6 · MCP server",
-    "The CEP admin tools live in a separate process. Pocket CEP talks to it over HTTP.",
+  p.log.step("Step 6/6 · MCP server");
+  p.note(
+    "The CEP admin tools live in a separate process; Pocket CEP\n" +
+      "talks to it over HTTP.\n\n" +
+      "Most contributors use the official npm package, which\n" +
+      "`npm run dev:full` launches alongside Next on port 4000:\n\n" +
+      "  npx @google/chrome-enterprise-premium-mcp@latest\n\n" +
+      "If you've cloned the MCP source locally and want to run\n" +
+      "that instead, override the command when starting dev:\n\n" +
+      '  MCP_SERVER_CMD="node /path/to/cmcp/mcp-server.js" npm run dev:full\n\n' +
+      `Either way, Pocket CEP still dials ${DEFAULT_MCP_URL} —\n` +
+      "the URL doesn't change; only what's on the other end does.",
+    "About the MCP server",
   );
-
-  console.log(
-    `${DIM}Most contributors use the official npm package. \`npm run dev:full\`${RESET}`,
-  );
-  console.log(
-    `${DIM}launches it alongside Next on port 4000:${RESET}\n`,
-  );
-  console.log(`  ${CYAN}npx @google/chrome-enterprise-premium-mcp@latest${RESET}\n`);
-  console.log(
-    `${DIM}If you've cloned the MCP source locally and want to run that${RESET}`,
-  );
-  console.log(
-    `${DIM}instead, override the command when starting dev:${RESET}\n`,
-  );
-  console.log(`  ${CYAN}MCP_SERVER_CMD="node /path/to/cmcp/mcp-server.js" npm run dev:full${RESET}\n`);
-  console.log(
-    `${DIM}Either way, Pocket CEP still dials ${DEFAULT_MCP_URL} — the URL doesn't${RESET}`,
-  );
-  console.log(`${DIM}change; only what's on the other end does.${RESET}\n`);
 
   const isCustom = current !== undefined && current !== "" && current !== DEFAULT_MCP_URL;
 
-  const choice = await select<"local" | "custom">({
-    message: "Which URL should Pocket CEP dial?",
-    default: isCustom ? "custom" : "local",
-    choices: [
-      {
-        name: `${DEFAULT_MCP_URL} — local, started by \`npm run dev:full\``,
-        value: "local",
-        description: "Covers both the npm package and a local source clone (via MCP_SERVER_CMD).",
-      },
-      {
-        name: "Somewhere else — I have an MCP server running remotely",
-        value: "custom",
-        description: "Enter a URL (staging deployment, Cloud Run, shared demo, etc.).",
-      },
-    ],
-  });
+  const choice = await ask<"local" | "custom">(
+    p.select({
+      message: "Which URL should Pocket CEP dial?",
+      initialValue: isCustom ? "custom" : "local",
+      options: [
+        {
+          label: `${DEFAULT_MCP_URL} — local, started by \`npm run dev:full\``,
+          value: "local",
+          hint: "Covers both the npm package and a local source clone (via MCP_SERVER_CMD).",
+        },
+        {
+          label: "Somewhere else — I have an MCP server running remotely",
+          value: "custom",
+          hint: "Enter a URL (staging deployment, Cloud Run, shared demo, etc.).",
+        },
+      ],
+    }),
+  );
 
   if (choice === "local") {
-    note(`Set to ${DEFAULT_MCP_URL}. Start the server with \`npm run dev:full\` when ready.`);
+    p.log.info(`Set to ${DEFAULT_MCP_URL}. Start the server with \`npm run dev:full\` when ready.`);
     return DEFAULT_MCP_URL;
   }
 
-  return input({
-    message: "MCP_SERVER_URL:",
-    default: isCustom ? current : DEFAULT_MCP_URL,
-    validate: async (value) => {
-      const url = value.trim();
-      if (!url) return "URL is required";
-      try {
-        new URL(url);
-      } catch {
-        return "Not a valid URL";
-      }
-      const result = await probeMcpServer(url);
-      if (result.ok) return true;
-      return `${result.message}. Skip the reachability check with Ctrl+C if the server isn't running yet.`;
-    },
-  });
+  // Sync validate handles format; reachability is probed in a loop
+  // after the prompt (clack's validate signature is synchronous).
+  for (;;) {
+    const url = await ask(
+      p.text({
+        message: "MCP_SERVER_URL",
+        defaultValue: isCustom ? current : DEFAULT_MCP_URL,
+        validate: (value) => {
+          if (!value) return "URL is required";
+          const trimmed = value.trim();
+          if (!trimmed) return "URL is required";
+          try {
+            new URL(trimmed);
+          } catch {
+            return "Not a valid URL";
+          }
+          return undefined;
+        },
+      }),
+    );
+    const trimmed = url.trim();
+    const s = p.spinner();
+    s.start(`Probing ${trimmed}`);
+    const result = await probeMcpServer(trimmed);
+    if (result.ok) {
+      s.stop(`MCP server reachable at ${trimmed}`);
+      return trimmed;
+    }
+    s.stop(`Not reachable — ${result.message}`);
+    const next = await ask<"retry" | "skip">(
+      p.select({
+        message: "What next?",
+        initialValue: "retry",
+        options: [
+          { label: "Try a different URL", value: "retry" },
+          {
+            label: "Use this URL anyway",
+            value: "skip",
+            hint: "Use when the server isn't running yet but you know the URL is right.",
+          },
+        ],
+      }),
+    );
+    if (next === "skip") return trimmed;
+  }
 }
 
 async function optionalModelOverride(
   provider: "claude" | "gemini",
   current: string | undefined,
 ): Promise<string> {
-  const wantOverride = await confirm({
-    message: `Use the default ${provider} model? (No lets you pin a specific model ID.)`,
-    default: current ? false : true,
-  });
+  const wantOverride = await ask(
+    p.confirm({
+      message: `Use the default ${provider} model? (No lets you pin a specific model ID.)`,
+      initialValue: !current,
+    }),
+  );
   if (wantOverride) return "";
-  return input({
-    message: `LLM_MODEL for ${provider}:`,
-    default: current,
-    validate: (v) => (v.trim().length > 0 ? true : "Leave blank to use the default"),
-  });
+  return ask(
+    p.text({
+      message: `LLM_MODEL for ${provider}`,
+      defaultValue: current,
+      validate: (v) => (v && v.trim().length > 0 ? undefined : "Leave blank to use the default"),
+    }),
+  );
 }
 
 async function main() {
-  console.log(`${BOLD}\nPocket CEP — Interactive Setup${RESET}`);
-  console.log(`${DIM}Writes .env.local (existing values are used as defaults).${RESET}`);
+  p.intro("Pocket CEP — Interactive Setup");
+  p.log.message("Configures .env.local. Existing values are used as defaults.");
 
   const existing = readExistingEnv();
 
@@ -746,10 +796,11 @@ async function main() {
       ? await promptAnthropicKey(existing.ANTHROPIC_API_KEY)
       : await promptGeminiKey(existing.GOOGLE_AI_API_KEY);
 
-  note(
-    "Tip: the in-app model picker (top bar) lets you paste keys for any\n" +
-      "provider — Claude, Gemini, OpenAI — for casual use. Keys live in your\n" +
-      "browser's localStorage only. No need to re-run setup.",
+  p.note(
+    "The in-app top-bar model picker accepts keys for any provider —\n" +
+      "Claude, Gemini, OpenAI — for casual use. Keys live in your\n" +
+      "browser's localStorage only, no need to re-run setup.",
+    "Tip: BYOK in the app",
   );
 
   let clientId = "";
@@ -789,38 +840,38 @@ async function main() {
     merged.GOOGLE_CLIENT_SECRET = clientSecret;
   }
 
-  banner("Review", "Nothing is written until you confirm.");
-  console.log(`  AUTH_MODE     ${CYAN}${authMode}${RESET}`);
-  console.log(`  LLM_PROVIDER  ${CYAN}${llmProvider}${RESET}`);
-  console.log(
-    `  LLM_MODEL     ${CYAN}${modelOverride || `(default for ${llmProvider})`}${RESET}`,
+  p.note(
+    `AUTH_MODE       ${authMode}\n` +
+      `LLM_PROVIDER    ${llmProvider}\n` +
+      `LLM_MODEL       ${modelOverride || `(default for ${llmProvider})`}\n` +
+      `MCP_SERVER_URL  ${mcpUrl}\n` +
+      `Secrets         masked, written to .env.local`,
+    "Review",
   );
-  console.log(`  MCP_SERVER_URL ${CYAN}${mcpUrl}${RESET}`);
-  console.log(`  Secrets       ${DIM}masked, written to .env.local${RESET}`);
 
-  const write = await confirm({ message: `Write ${ENV_PATH}?`, default: true });
+  const write = await ask(
+    p.confirm({ message: `Write ${ENV_PATH}?`, initialValue: true }),
+  );
   if (!write) {
-    console.log(`${YELLOW}Aborted. No files changed.${RESET}\n`);
-    return;
+    p.cancel("Aborted. No files changed.");
+    process.exit(0);
   }
 
   writeEnv(merged);
-  console.log(`  ${GREEN}✓${RESET} Wrote ${ENV_PATH}\n`);
+  p.log.success(`Wrote ${ENV_PATH}`);
 
-  const runDoctor = await confirm({ message: "Run `npm run doctor` now?", default: true });
+  const runDoctor = await ask(
+    p.confirm({ message: "Run `npm run doctor` now?", initialValue: true }),
+  );
   if (runDoctor) {
-    console.log();
+    p.outro("Running doctor…");
     spawnSync("npm", ["run", "doctor"], { stdio: "inherit" });
   } else {
-    console.log(`${DIM}You can run it any time with: npm run doctor${RESET}\n`);
+    p.outro("Setup complete. Run `npm run doctor` any time to verify.");
   }
 }
 
 main().catch((error: unknown) => {
-  if (error instanceof Error && error.name === "ExitPromptError") {
-    console.log(`\n${YELLOW}Setup cancelled.${RESET}\n`);
-    process.exit(0);
-  }
-  console.error("\nSetup failed:", error);
+  p.cancel(error instanceof Error ? `Setup failed: ${error.message}` : "Setup failed");
   process.exit(1);
 });
