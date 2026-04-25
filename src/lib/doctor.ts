@@ -70,27 +70,46 @@ function parseEnvFile(filePath: string): Record<string, string> {
 }
 
 /**
+ * Distinguishes the auto-start failure modes so the doctor's output
+ * can name what actually went wrong: spawn never started (e.g. npx
+ * missing), child started then exited (most often the upstream MCP's
+ * stdin-EOF shutdown), or the polling budget elapsed while the child
+ * kept running.
+ */
+type AutoStartFailure =
+  | { kind: "spawn_error"; error: Error }
+  | { kind: "child_exited"; code: number | null }
+  | { kind: "timeout" };
+
+/**
  * Starts the upstream MCP server temporarily — same npx invocation
  * `npm run dev:full` uses — and waits for it to become reachable. Used
  * by the MCP probe when the URL is the managed default and the user
  * almost certainly hasn't started the server themselves.
  *
- * Returns the live probe result + the child handle so the caller can
- * kill it after running tools/prompts checks. Returns null on spawn
- * failure (npx not on PATH, child exited early, or the 60-second
- * reachability budget expired — generous because first-time npx has
- * to download the package).
+ * Returns the live probe result + the child handle (so the caller
+ * can run tools/prompts checks then kill the child) on success, or a
+ * structured {@link AutoStartFailure} so the failure path can pick
+ * an accurate fix hint.
  */
 async function tryStartManagedMcpServer(
   url: string,
-): Promise<{ child: ChildProcess; result: CheckResult } | null> {
+): Promise<
+  { ok: true; child: ChildProcess; result: CheckResult } | { ok: false; failure: AutoStartFailure }
+> {
   process.stdout.write(
     `\n  \x1b[2mMCP server not running. Starting \`${MCP_NPX_PACKAGE}\` temporarily…\x1b[0m`,
   );
 
+  // `stdio: ["pipe", "ignore", "ignore"]` keeps an open writable pipe
+  // on the child's stdin. The upstream MCP server treats stdin EOF as
+  // a shutdown signal even in HTTP mode, so the simpler
+  // `stdio: "ignore"` (which connects stdin to /dev/null) makes the
+  // child exit within milliseconds. `dev:full` works around this with
+  // `tail -f /dev/null |`; this is the Node-native equivalent.
   const child = spawn("npx", [MCP_NPX_PACKAGE], {
     env: { ...process.env, PORT: "4000", GCP_STDIO: "false", LOG_LEVEL: "error" },
-    stdio: "ignore",
+    stdio: ["pipe", "ignore", "ignore"],
   });
 
   let spawnError: Error | null = null;
@@ -100,23 +119,27 @@ async function tryStartManagedMcpServer(
 
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (spawnError !== null || child.exitCode !== null) {
+    if (spawnError !== null) {
       process.stdout.write("\n");
       if (!child.killed) child.kill("SIGTERM");
-      return null;
+      return { ok: false, failure: { kind: "spawn_error", error: spawnError } };
+    }
+    if (child.exitCode !== null) {
+      process.stdout.write("\n");
+      return { ok: false, failure: { kind: "child_exited", code: child.exitCode } };
     }
     await new Promise((r) => setTimeout(r, 500));
     process.stdout.write(".");
     const probe = await probeMcpServer(url);
     if (probe.ok) {
       process.stdout.write(" ready.\n");
-      return { child, result: probe };
+      return { ok: true, child, result: probe };
     }
   }
 
   process.stdout.write(" timed out.\n");
   if (!child.killed) child.kill("SIGTERM");
-  return null;
+  return { ok: false, failure: { kind: "timeout" } };
 }
 
 /**
@@ -325,12 +348,15 @@ async function main() {
   // themselves. Auto-start the server so the probe is meaningful.
   let mcpResult = initialMcpResult;
   let mcpChild: ChildProcess | null = null;
+  let autoStartFailure: AutoStartFailure | null = null;
   if (!initialMcpResult.ok && data.MCP_SERVER_URL === DEFAULT_MCP_URL) {
     restoreConsole();
-    const started = await tryStartManagedMcpServer(data.MCP_SERVER_URL);
-    if (started) {
-      mcpResult = started.result;
-      mcpChild = started.child;
+    const outcome = await tryStartManagedMcpServer(data.MCP_SERVER_URL);
+    if (outcome.ok) {
+      mcpResult = outcome.result;
+      mcpChild = outcome.child;
+    } else {
+      autoStartFailure = outcome.failure;
     }
     restoreConsole = muteLibraryLogs();
   }
@@ -371,13 +397,11 @@ async function main() {
     ),
   ];
 
-  const isManagedDefault = data.MCP_SERVER_URL === DEFAULT_MCP_URL;
-  const autoStartFailed = !initialMcpResult.ok && isManagedDefault && !mcpChild;
   const mcpWhy = mcpChild
     ? "Doctor started the MCP server temporarily for this probe; it exits with the doctor."
     : "Why: every chat turn opens a fresh MCP connection to call tools and fetch prompts.";
-  const mcpFix = autoStartFailed
-    ? "Doctor's `npx` auto-start didn't become reachable in 60s. Run `npm run dev:full` manually."
+  const mcpFix = autoStartFailure
+    ? autoStartFailureFix(autoStartFailure)
     : "Fix: npm run dev:full   (or start the MCP server separately on PORT=4000)";
   const mcpLines: CheckLine[] = [probeLine(mcpResult, mcpWhy, mcpFix)];
 
@@ -430,6 +454,23 @@ async function main() {
 
   const allLines = [...staticLines, ...adcLines, ...providerLines, ...mcpLines];
   finishWithSummary(countFailures(allLines), countPasses(allLines));
+}
+
+/**
+ * Maps an auto-start failure to a user-facing fix hint that names
+ * what actually went wrong, so "auto-start failed" doesn't always
+ * mean "we waited and gave up" when the real problem was the child
+ * exiting in the first second.
+ */
+function autoStartFailureFix(failure: AutoStartFailure): string {
+  switch (failure.kind) {
+    case "spawn_error":
+      return `Doctor couldn't run \`npx\` (${failure.error.message}). Install Node ≥ 22 or run \`npm run dev:full\` manually.`;
+    case "child_exited":
+      return `Doctor's \`npx\` child exited early (code ${failure.code ?? "null"}). Run \`npm run dev:full\` manually to see the upstream error.`;
+    case "timeout":
+      return "Doctor's `npx` auto-start didn't become reachable in 60s. Run `npm run dev:full` manually.";
+  }
 }
 
 function describeMcpFailure(method: string, reason: unknown): CheckLine {
