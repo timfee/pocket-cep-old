@@ -499,41 +499,47 @@ function readAdcQuotaProject(): string | null {
   }
 }
 
-type GcloudProject = { projectId: string; name: string };
-
 /**
- * Returns the user's GCP projects via `gcloud projects list`, or null
- * if the call fails (no permissions, gcloud not authenticated, etc.).
- * Limited to 200 entries so the picker stays responsive on huge orgs;
- * users with more can fall back to typing a project ID by hand.
+ * Returns the project the user already has configured as their gcloud
+ * default (`gcloud config get-value project`). Used as the pre-filled
+ * answer for the quota-project prompt — covers the 99% case where
+ * someone already has a working gcloud config and just wants to pin
+ * the same project for ADC. Returns null if the value is `(unset)`,
+ * gcloud is missing, or any other failure.
  */
-function listGcloudProjects(): GcloudProject[] | null {
+function detectDefaultGcloudProject(): string | null {
   const result = spawnSync(
     "gcloud",
-    ["projects", "list", "--format=json", "--limit=200"],
+    ["config", "get-value", "project", "--quiet"],
     { encoding: "utf-8" },
   );
   if (result.status !== 0) return null;
-  try {
-    const parsed: unknown = JSON.parse(result.stdout);
-    if (!Array.isArray(parsed)) return null;
-    return parsed
-      .filter((p): p is { projectId: string; name?: string } => {
-        return !!p && typeof p === "object" && typeof (p as { projectId?: unknown }).projectId === "string";
-      })
-      .map((p) => ({ projectId: p.projectId, name: p.name ?? p.projectId }));
-  } catch {
-    return null;
-  }
+  const value = result.stdout.trim();
+  if (!value || value === "(unset)") return null;
+  return value;
 }
 
-const MANUAL_ENTRY = "__MANUAL__";
+/**
+ * Project IDs: 6-30 chars, lowercase letters/digits/hyphens, must
+ * start with a letter. Caught here as a paste-error guard before the
+ * gcloud subprocess call.
+ */
+const PROJECT_ID_RE = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
 
 /**
- * Picks a quota project: lists projects via gcloud, lets the user
- * select one (with a manual-entry escape hatch), then runs
- * `gcloud auth application-default set-quota-project` for them.
- * Falls back to a printed command if any step fails.
+ * Pins a quota project on the user's ADC credentials. Avoids
+ * `gcloud projects list` because organisations frequently have
+ * 100K+ projects and listing them all is slow and useless as a
+ * picker. Instead we:
+ *
+ *   1. Read any existing quota_project_id from the ADC JSON. If set,
+ *      just confirm it.
+ *   2. Otherwise probe `gcloud config get-value project` for a
+ *      sensible default.
+ *   3. Prompt the user with that default pre-filled, plus inline
+ *      help on how to find a project ID if they don't have one.
+ *   4. Run `gcloud auth application-default set-quota-project` for
+ *      them. Falls back to a printed manual command on any failure.
  */
 async function ensureQuotaProject(): Promise<void> {
   const existing = readAdcQuotaProject();
@@ -545,54 +551,46 @@ async function ensureQuotaProject(): Promise<void> {
   console.log(`${DIM}ADC has no quota project pinned yet. Pocket CEP needs one${RESET}`);
   console.log(`${DIM}so Workspace API calls bill and rate-limit against your project.${RESET}\n`);
 
-  checking("Listing your GCP projects");
-  const projects = listGcloudProjects();
-  if (projects === null || projects.length === 0) {
-    failClear(
-      projects === null
-        ? "Couldn't run `gcloud projects list`"
-        : "No GCP projects visible to your gcloud account",
+  const detected = detectDefaultGcloudProject();
+  if (detected) {
+    console.log(
+      `${DIM}Your gcloud config has \`project=${detected}\` — pre-filled as the default.${RESET}\n`,
     );
-    console.log(`${DIM}Once you have a project ID, run:${RESET}`);
-    console.log(`  ${CYAN}gcloud auth application-default set-quota-project YOUR_PROJECT_ID${RESET}\n`);
-    return;
+  } else {
+    console.log(`${DIM}If you don't know the project ID:${RESET}`);
+    console.log(`  ${DIM}• \`gcloud config get-value project\` shows your gcloud default${RESET}`);
+    console.log(
+      `  ${DIM}• console.cloud.google.com → project picker (top of page)${RESET}\n`,
+    );
   }
-  okClear(`Found ${projects.length} project${projects.length === 1 ? "" : "s"}`);
 
-  const choices = [
-    ...projects.map((p) => ({
-      name: p.projectId === p.name ? p.projectId : `${p.projectId} — ${p.name}`,
-      value: p.projectId,
-    })),
-    { name: "Enter a project ID manually", value: MANUAL_ENTRY },
-  ];
-
-  const picked = await select<string>({
-    message: "Which project should ADC pin to?",
-    choices,
+  const projectId = await input({
+    message: "Project ID for ADC quota:",
+    default: detected ?? undefined,
+    validate: (v) => {
+      const trimmed = v.trim();
+      if (!trimmed) return "Project ID is required";
+      if (!PROJECT_ID_RE.test(trimmed)) {
+        return "Project IDs are 6-30 chars, lowercase letters/digits/hyphens, starting with a letter";
+      }
+      return true;
+    },
   });
 
-  const projectId =
-    picked === MANUAL_ENTRY
-      ? await input({
-          message: "Project ID:",
-          validate: (v) => (v.trim().length > 0 ? true : "Project ID is required"),
-        })
-      : picked;
-
-  checking(`Setting quota project to ${projectId}`);
+  const trimmed = projectId.trim();
+  checking(`Setting quota project to ${trimmed}`);
   const set = spawnSync(
     "gcloud",
-    ["auth", "application-default", "set-quota-project", projectId.trim()],
+    ["auth", "application-default", "set-quota-project", trimmed],
     { stdio: "ignore" },
   );
   if (set.status === 0) {
-    okClear(`Quota project set to ${projectId.trim()}`);
+    okClear(`Quota project set to ${trimmed}`);
     return;
   }
   failClear("`gcloud` rejected the project ID");
   console.log(`${DIM}Run manually:${RESET}`);
-  console.log(`  ${CYAN}gcloud auth application-default set-quota-project ${projectId.trim()}${RESET}\n`);
+  console.log(`  ${CYAN}gcloud auth application-default set-quota-project ${trimmed}${RESET}\n`);
 }
 
 /**
