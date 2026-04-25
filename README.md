@@ -17,7 +17,7 @@ The app is deliberately educational. An **MCP Inspector** panel shows every JSON
 - **Dual LLM support** — Claude (Anthropic) or Gemini (Google) via the Vercel AI SDK v6's `@ai-sdk/anthropic` and `@ai-sdk/google` providers.
 - **Two auth modes** — ADC for simple demos, or forward the signed-in user's Google OAuth token for per-user attribution.
 - **MCP Inspector** — a collapsible drawer showing every MCP tool call's input, state, and output, synthesized from the streamed `ToolUIPart` events the AI SDK produces.
-- **Environment diagnostics** — `npm run doctor` validates env, probes the MCP server, and lists reachable tools + prompts.
+- **Environment diagnostics** — `npm run doctor` validates env, probes ADC + the LLM provider, and reaches the MCP server. If the URL is the managed default and the server isn't running, doctor temporarily starts it (the same npx package `npm run dev:full` uses), runs `tools/list` + `prompts/list` against the live server, and kills it on exit.
 
 ## Prerequisites
 
@@ -375,27 +375,31 @@ Covers: landing page rendering, chat transport wiring (selected user propagates 
 
 ## Environment Diagnostics
 
-Run `npm run doctor` before starting the app to catch configuration issues early:
+Run `npm run doctor` before starting the app to catch configuration issues early. Output is grouped into four sections so a failure is easy to locate:
 
 ```
-Pocket CEP Environment Check
-
-Static checks:
+[Static] files + env schema
   ✓ .env file found
   ✓ .env.local file found (secrets)
-  ✓ Environment variables valid (Zod schema passed)
+  ✓ Env schema parsed
   ✓ BETTER_AUTH_SECRET is set to a real value
-  ✓ AUTH_MODE: service_account
-  ✓ LLM_PROVIDER: claude
 
-Runtime checks:
-  ✓ MCP server reachable at http://localhost:4000/mcp (status: 405)
-  ✓ MCP server has 23 tools available
-  ✓ MCP server has 3 prompts available
-  ✓ Anthropic API key accepted (status: 400)
+[Google credentials] ADC — service_account mode
+  ✓ ADC token issued
 
-Summary: 10/10 checks passed. All good!
+[LLM provider] claude via Vercel AI SDK
+  ✓ Anthropic key accepted
+
+[MCP server] JSON-RPC 2.0 over HTTP @ http://localhost:4000/mcp
+  MCP server not running. Starting `@google/chrome-enterprise-premium-mcp@latest` temporarily…........... ready.
+  ✓ MCP server reachable
+  ✓ MCP tools/list returned 23 tools
+  ✓ MCP prompts/list returned 3 prompts
+
+Summary: 10/10 checks passed. All good — start the app with `npm run dev:full`.
 ```
+
+When `MCP_SERVER_URL` is the managed default and the initial probe fails, doctor auto-spawns the npx package, polls until reachable (60s budget), and kills the child on exit. Pointing `MCP_SERVER_URL` at a custom server skips the auto-spawn — doctor just probes and reports.
 
 ## When your Google session expires
 

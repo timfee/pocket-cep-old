@@ -5,6 +5,7 @@
 
 import { describe, it, expect } from "vitest";
 import { serverSchema, EnvValidationError, isEnvValidationError } from "@/lib/env";
+import { DEFAULT_MCP_URL } from "@/lib/constants";
 
 const VALID_CLAUDE_SA = {
   AUTH_MODE: "service_account",
@@ -79,6 +80,20 @@ describe("serverSchema", () => {
   it("rejects missing BETTER_AUTH_SECRET", () => {
     const { BETTER_AUTH_SECRET: _, ...env } = VALID_CLAUDE_SA;
     expect(serverSchema.safeParse(env).success).toBe(false);
+  });
+
+  it("MCP_SERVER_URL default matches DEFAULT_MCP_URL constant", () => {
+    // Setup CLI and doctor both branch on this constant to recognise
+    // the managed flow; if env.ts ever re-hardcodes a different URL,
+    // those branches silently stop firing.
+    const result = serverSchema.safeParse({
+      BETTER_AUTH_SECRET: "x",
+      ANTHROPIC_API_KEY: "sk-ant-x",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.MCP_SERVER_URL).toBe(DEFAULT_MCP_URL);
+    }
   });
 });
 

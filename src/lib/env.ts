@@ -12,6 +12,7 @@
  */
 
 import { z } from "zod";
+import { DEFAULT_MCP_URL } from "./constants";
 
 /**
  * Regex-validated Google OAuth client ID. The strict format check catches
@@ -39,7 +40,7 @@ const baseFields = {
     .string()
     .min(1, "BETTER_AUTH_SECRET is required. Run: openssl rand -base64 32"),
   BETTER_AUTH_URL: z.string().url().default("http://localhost:3000"),
-  MCP_SERVER_URL: z.string().url().default("http://localhost:4000/mcp"),
+  MCP_SERVER_URL: z.string().url().default(DEFAULT_MCP_URL),
   LLM_MODEL: z.string().default(""),
 };
 
